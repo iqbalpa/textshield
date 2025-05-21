@@ -12,10 +12,17 @@ class RuleBasedSpamDetector : SpamDetector {
         "win", "winner", "free", "prize", "urgent", "congrats", "congratulations", 
         "claim", "offer", "lottery", "limited time", "cash", "click", "subscribe",
         "investment", "crypto", "bitcoin", "bank account", "verify", "password",
-        "suspicious", "activate", "deactivate", "account locked", "security alert"
+        "suspicious", "activate", "deactivate", "account locked", "security alert",
+        // Additional spam keywords
+        "act now", "special offer", "cash prize", "instant approval", "no credit check",
+        "you've been selected", "guaranteed", "risk-free", "double your money",
+        "earn money fast", "discount", "best price", "call now", "get rich", "money back",
+
+        "cair", "dana darurat", "paylater", "bayar nanti", "bayar kemudian", "bayar kembali",
     )
     
-    private var initialized = false
+    // Initialize to true by default for immediate use
+    private var initialized = true
     
     override suspend fun initialize() {
         // Nothing to initialize for rule-based detector

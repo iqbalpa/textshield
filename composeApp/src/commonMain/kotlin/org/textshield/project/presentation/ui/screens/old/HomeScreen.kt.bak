@@ -1,0 +1,145 @@
+package org.textshield.project.presentation.ui.screens
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.navigator.LocalNavigator
+import cafe.adriel.voyager.navigator.currentOrThrow
+import org.textshield.project.domain.model.SmsMessage
+import org.textshield.project.presentation.navigation.openConversation
+import org.textshield.project.presentation.ui.components.MessageListItem
+import org.textshield.project.presentation.viewmodel.InboxViewModel
+
+/**
+ * Home screen that displays inbox messages
+ */
+@Composable
+fun HomeScreen(viewModel: InboxViewModel) {
+    val state by viewModel.state.collectAsState()
+    val navigator = LocalNavigator.currentOrThrow
+    
+    // Group messages by sender for conversation view
+    val messagesBySender = remember(state.inboxMessages) {
+        state.inboxMessages.groupBy { it.sender }
+    }
+    
+    Scaffold(
+        topBar = {
+            HomeTopBar(
+                onRefresh = { viewModel.loadMessages() }
+            )
+        },
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            // Loading indicator
+            AnimatedVisibility(
+                visible = state.isLoading,
+                enter = fadeIn(animationSpec = tween(300)),
+                exit = fadeOut(animationSpec = tween(300))
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+            
+            // Message list
+            AnimatedVisibility(
+                visible = !state.isLoading,
+                enter = fadeIn(animationSpec = tween(300)),
+                exit = fadeOut(animationSpec = tween(300))
+            ) {
+                if (state.inboxMessages.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No messages in inbox",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        items(
+                            // Get the most recent message from each sender
+                            messagesBySender.map { (_, messages) ->
+                                messages.maxByOrNull { it.timestamp } ?: messages.first()
+                            }.sortedByDescending { it.timestamp }
+                        ) { message ->
+                            MessageListItem(
+                                message = message,
+                                onMessageClick = {
+                                    // Get all messages from this sender for the conversation
+                                    val conversationMessages = messagesBySender[message.sender] ?: emptyList()
+                                    openConversation(navigator, message.sender, conversationMessages)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+            
+            // Error message if any
+            state.error?.let { error ->
+                Snackbar(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .align(Alignment.BottomCenter)
+                ) {
+                    Text(error)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeTopBar(
+    onRefresh: () -> Unit
+) {
+    CenterAlignedTopAppBar(
+        title = {
+            Text(
+                text = "Messages",
+                style = MaterialTheme.typography.headlineMedium
+            )
+        },
+        actions = {
+            IconButton(onClick = onRefresh) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Refresh"
+                )
+            }
+        },
+        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface
+        )
+    )
+} 
