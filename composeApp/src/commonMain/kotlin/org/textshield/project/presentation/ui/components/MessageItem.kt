@@ -214,7 +214,8 @@ fun SpamConfidenceIndicator(
  * Format timestamp according to the requirements:
  * - If the message was received today, show the time (e.g., "3:45 PM")
  * - If the message was received yesterday, show "Yesterday"
- * - Otherwise, show the date in MMM dd format (e.g., "May 19")
+ * - If from current year but not today/yesterday, show "MMM dd" (e.g., "May 19")
+ * - If from previous years, show "MMM dd, yyyy" (e.g., "May 19, 2023")
  */
 private fun formatTimestamp(timestamp: Long): String {
     val calendar = Calendar.getInstance()
@@ -237,7 +238,17 @@ private fun formatTimestamp(timestamp: Long): String {
         return "Yesterday"
     }
     
-    // Otherwise format as MMM dd (e.g., "May 19")
-    val dateFormat = SimpleDateFormat("MMM dd", Locale.getDefault())
-    return dateFormat.format(Date(timestamp))
+    // Reset calendar to message date
+    calendar.timeInMillis = timestamp
+    
+    // Check if the message is from current year
+    return if (calendar.get(Calendar.YEAR) == now.get(Calendar.YEAR)) {
+        // Format as MMM dd (e.g., "May 19")
+        val dateFormat = SimpleDateFormat("MMM dd", Locale.getDefault())
+        dateFormat.format(Date(timestamp))
+    } else {
+        // Format as MMM dd, yyyy (e.g., "May 19, 2023") for previous years
+        val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
+        dateFormat.format(Date(timestamp))
+    }
 } 
