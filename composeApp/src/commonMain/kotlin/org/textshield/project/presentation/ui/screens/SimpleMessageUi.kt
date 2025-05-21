@@ -70,8 +70,20 @@ fun SimpleMessageScreen() {
     // Track whether messages are being moved to avoid auto-tab switching
     var isMovingToSpam by remember { mutableStateOf(false) }
     
-    // Function to handle marking a message as spam
-    val handleMarkAsSpam = { messageId: String ->
+    // Helper functions for spam actions
+    fun handleMarkAsNotSpam(messageId: String) {
+        viewModel.markMessageSpamStatus(messageId, false)
+        
+        scope.launch {
+            snackbarHostState.showSnackbar(
+                message = "Message moved to Inbox",
+                duration = SnackbarDuration.Short,
+                withDismissAction = true
+            )
+        }
+    }
+    
+    fun handleMarkAsSpam(messageId: String) {
         isMovingToSpam = true
         viewModel.markMessageSpamStatus(messageId, true)
         
@@ -81,21 +93,7 @@ fun SimpleMessageScreen() {
                 duration = SnackbarDuration.Short,
                 withDismissAction = true
             )
-            // Reset flag after notification is shown
             isMovingToSpam = false
-        }
-    }
-    
-    // Add a function to handle marking a message as "not spam"
-    val handleMarkAsNotSpam = { messageId: String ->
-        viewModel.markMessageSpamStatus(messageId, false)
-        
-        scope.launch {
-            snackbarHostState.showSnackbar(
-                message = "Message moved to Inbox",
-                duration = SnackbarDuration.Short,
-                withDismissAction = true
-            )
         }
     }
     
@@ -292,7 +290,7 @@ fun SimpleMessageScreen() {
                                     SimpleMessageItem(
                                         message = message,
                                         onClick = { openConversation(message.sender, messagesBySender[message.sender] ?: emptyList()) },
-                                        onMarkAsSpam = null,
+                                        onMarkAsSpam = { handleMarkAsSpam(message.id) },
                                         onMarkAsNotSpam = { handleMarkAsNotSpam(message.id) },
                                         onDelete = { viewModel.performSpamAction(message.id, SpamAction.REMOVED) },
                                         isDefault = state.isDefaultSmsApp,
@@ -397,7 +395,7 @@ fun SimpleMessageScreen() {
                                                 openConversation(message.sender, spamMessagesBySender[message.sender] ?: emptyList())
                                             }
                                         },
-                                        onMarkAsSpam = null,
+                                        onMarkAsSpam = { handleMarkAsSpam(message.id) },
                                         onMarkAsNotSpam = { handleMarkAsNotSpam(message.id) },
                                         onDelete = { viewModel.performSpamAction(message.id, SpamAction.REMOVED) },
                                         isDefault = state.isDefaultSmsApp,
@@ -515,12 +513,12 @@ fun SimpleMessageScreen() {
                                             currentScreen = if (message.isSpam) Screen.Spam else Screen.Inbox
                                         }
                                     },
-                                    onMarkAsSpam = { 
+                                    onMarkAsSpam = {
                                         if (message.isSpam) {
-                                            // If already spam, just mark as not spam
+                                            // Mark as not spam
                                             viewModel.markMessageSpamStatus(message.id, false)
                                         } else {
-                                            // Mark as spam using our enhanced function
+                                            // Mark as spam
                                             isMovingToSpam = true
                                             viewModel.markMessageSpamStatus(message.id, true)
                                             
@@ -530,7 +528,6 @@ fun SimpleMessageScreen() {
                                                     duration = SnackbarDuration.Short,
                                                     withDismissAction = true
                                                 )
-                                                // Reset flag after notification is shown
                                                 isMovingToSpam = false
                                             }
                                             
@@ -1076,17 +1073,25 @@ private fun SimpleMessageItem(
                 }
             },
             dismissButton = {
-                TextButton(
-                    onClick = {
-                        if (message.isSpam && onMarkAsNotSpam != null) {
-                            onMarkAsNotSpam()
-                        } else if (!message.isSpam && onMarkAsSpam != null) {
-                            onMarkAsSpam()
+                if ((message.isSpam && onMarkAsNotSpam != null) || 
+                    (!message.isSpam && onMarkAsSpam != null)) {
+                    TextButton(
+                        onClick = {
+                            if (message.isSpam && onMarkAsNotSpam != null) {
+                                onMarkAsNotSpam()
+                            } else if (!message.isSpam && onMarkAsSpam != null) {
+                                onMarkAsSpam()
+                            }
+                            showActions = false
                         }
-                        showActions = false
+                    ) {
+                        Text(if (message.isSpam) "Not Spam" else "Mark as Spam")
                     }
-                ) {
-                    Text(if (message.isSpam) "Not Spam" else "Mark as Spam")
+                } else {
+                    // Just close dialog if no action is available
+                    TextButton(onClick = { showActions = false }) {
+                        Text("Close")
+                    }
                 }
             }
         )
