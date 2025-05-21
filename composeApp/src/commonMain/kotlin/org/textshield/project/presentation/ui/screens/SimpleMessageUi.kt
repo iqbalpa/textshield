@@ -342,13 +342,7 @@ fun SimpleMessageScreen() {
                             )
                         }
                         
-                        // Settings action selector
-                        SpamActionSelector(
-                            currentAction = state.defaultSpamAction,
-                            onActionSelected = { viewModel.setDefaultSpamAction(it) }
-                        )
-                        
-                        // Show bulk actions toolbar if there are spam messages
+                                                // Show bulk actions toolbar if there are spam messages
                         if (state.spamMessages.isNotEmpty()) {
                             BulkActionsToolbar(
                                 selectedCount = state.selectedMessageIds.size,
