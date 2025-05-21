@@ -67,9 +67,41 @@ fun SimpleMessageScreen() {
     var searchQuery by remember { mutableStateOf("") }
     val searchTextFieldFocusRequester = remember { FocusRequester() }
     
-    // Automatically show spam tab if there are spam messages
+    // Track whether messages are being moved to avoid auto-tab switching
+    var isMovingToSpam by remember { mutableStateOf(false) }
+    
+    // Function to handle marking a message as spam
+    val handleMarkAsSpam = { messageId: String ->
+        isMovingToSpam = true
+        viewModel.markMessageSpamStatus(messageId, true)
+        
+        scope.launch {
+            snackbarHostState.showSnackbar(
+                message = "Message moved to Spam",
+                duration = SnackbarDuration.Short,
+                withDismissAction = true
+            )
+            // Reset flag after notification is shown
+            isMovingToSpam = false
+        }
+    }
+    
+    // Add a function to handle marking a message as "not spam"
+    val handleMarkAsNotSpam = { messageId: String ->
+        viewModel.markMessageSpamStatus(messageId, false)
+        
+        scope.launch {
+            snackbarHostState.showSnackbar(
+                message = "Message moved to Inbox",
+                duration = SnackbarDuration.Short,
+                withDismissAction = true
+            )
+        }
+    }
+    
+    // Automatically show spam tab if there are spam messages, but only if not in the process of marking something as spam
     LaunchedEffect(state.spamMessages) {
-        if (state.spamMessages.isNotEmpty()) {
+        if (state.spamMessages.isNotEmpty() && !isMovingToSpam) {
             viewModel.setCurrentTab(InboxTab.SPAM)
         }
     }
@@ -81,11 +113,13 @@ fun SimpleMessageScreen() {
         ) 
     }
     
-    // Update the current screen when tab changes
-    LaunchedEffect(state.currentTab) {
-        currentScreen = when (state.currentTab) {
-            InboxTab.INBOX -> Screen.Inbox
-            InboxTab.SPAM -> Screen.Spam
+    // Update the current screen when tab changes (unless we're processing a spam marking action)
+    LaunchedEffect(state.currentTab, isMovingToSpam) {
+        if (!isMovingToSpam) {
+            currentScreen = when (state.currentTab) {
+                InboxTab.INBOX -> Screen.Inbox
+                InboxTab.SPAM -> Screen.Spam
+            }
         }
     }
     
@@ -195,9 +229,11 @@ fun SimpleMessageScreen() {
                                 currentTab = InboxTab.INBOX,
                                 onTabChanged = { 
                                     viewModel.setCurrentTab(it)
-                                    currentScreen = when(it) {
-                                        InboxTab.INBOX -> Screen.Inbox
-                                        InboxTab.SPAM -> Screen.Spam
+                                    if (!isMovingToSpam) {
+                                        currentScreen = when(it) {
+                                            InboxTab.INBOX -> Screen.Inbox
+                                            InboxTab.SPAM -> Screen.Spam
+                                        }
                                     }
                                 },
                                 onRefresh = { viewModel.loadMessages() },
@@ -256,9 +292,13 @@ fun SimpleMessageScreen() {
                                     SimpleMessageItem(
                                         message = message,
                                         onClick = { openConversation(message.sender, messagesBySender[message.sender] ?: emptyList()) },
-                                        onMarkAsSpam = { viewModel.markMessageSpamStatus(message.id, true) },
+                                        onMarkAsSpam = null,
+                                        onMarkAsNotSpam = { handleMarkAsNotSpam(message.id) },
                                         onDelete = { viewModel.performSpamAction(message.id, SpamAction.REMOVED) },
                                         isDefault = state.isDefaultSmsApp,
+                                        isSelected = false,
+                                        onToggleSelection = null,
+                                        showCheckbox = false,
                                         unreadCount = unreadCount
                                     )
                                 }
@@ -357,7 +397,8 @@ fun SimpleMessageScreen() {
                                                 openConversation(message.sender, spamMessagesBySender[message.sender] ?: emptyList())
                                             }
                                         },
-                                        onMarkAsNotSpam = { viewModel.markMessageSpamStatus(message.id, false) },
+                                        onMarkAsSpam = null,
+                                        onMarkAsNotSpam = { handleMarkAsNotSpam(message.id) },
                                         onDelete = { viewModel.performSpamAction(message.id, SpamAction.REMOVED) },
                                         isDefault = state.isDefaultSmsApp,
                                         isSelected = isSelected,
@@ -373,31 +414,74 @@ fun SimpleMessageScreen() {
                 
                 is Screen.Conversation -> {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        // Conversation app bar
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surface)
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        // Conversation app bar - more compact and cleaner but still readable
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceDim,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            shadowElevation = 4.dp
                         ) {
-                            IconButton(
-                                onClick = { 
-                                    // Just go back without clearing viewed state
-                                    currentScreen = if (selectedConversationMessages.any { it.isSpam }) Screen.Spam else Screen.Inbox 
-                                }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp), // Increased padding
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.ArrowBack,
-                                    contentDescription = "Back",
-                                    tint = MaterialTheme.colorScheme.primary
+                                IconButton(
+                                    onClick = { 
+                                        // Just go back without clearing viewed state
+                                        currentScreen = if (selectedConversationMessages.any { it.isSpam }) Screen.Spam else Screen.Inbox 
+                                    },
+                                    modifier = Modifier.size(40.dp) // Slightly larger back button
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowBack,
+                                        contentDescription = "Back",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                
+                                // Contact initial avatar
+                                val sender = selectedConversationId ?: "Unknown"
+                                val isDarkTheme = isSystemInDarkTheme()
+                                
+                                // Generate consistent avatar color
+                                val avatarBackgroundColor = remember(sender) {
+                                    val hash = sender.hashCode()
+                                    val hue = (hash.absoluteValue % 360).toFloat()
+                                    val saturation = 0.7f
+                                    val lightness = if (isDarkTheme) 0.5f else 0.7f
+                                    
+                                    Color.hsv(hue = hue, saturation = saturation, value = lightness)
+                                }
+                                
+                                // Text color based on background brightness
+                                val avatarTextColor = if (calculateLuminance(avatarBackgroundColor) > 0.5f) 
+                                    Color.Black else Color.White
+                                
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp) // Larger avatar
+                                        .clip(CircleShape)
+                                        .background(avatarBackgroundColor),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = sender.firstOrNull()?.uppercase() ?: "?",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = avatarTextColor
+                                    )
+                                }
+                                
+                                Spacer(modifier = Modifier.width(16.dp)) // Increased spacing
+                                
+                                Text(
+                                    text = sender,
+                                    style = MaterialTheme.typography.titleLarge, // Larger text
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
-                            
-                            Text(
-                                text = selectedConversationId ?: "Conversation",
-                                style = MaterialTheme.typography.titleMedium
-                            )
                         }
                         
                         // Sort messages by timestamp (oldest to newest)
@@ -431,7 +515,31 @@ fun SimpleMessageScreen() {
                                             currentScreen = if (message.isSpam) Screen.Spam else Screen.Inbox
                                         }
                                     },
-                                    onMarkAsSpam = { viewModel.markMessageSpamStatus(message.id, !message.isSpam) },
+                                    onMarkAsSpam = { 
+                                        if (message.isSpam) {
+                                            // If already spam, just mark as not spam
+                                            viewModel.markMessageSpamStatus(message.id, false)
+                                        } else {
+                                            // Mark as spam using our enhanced function
+                                            isMovingToSpam = true
+                                            viewModel.markMessageSpamStatus(message.id, true)
+                                            
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    message = "Message moved to Spam",
+                                                    duration = SnackbarDuration.Short,
+                                                    withDismissAction = true
+                                                )
+                                                // Reset flag after notification is shown
+                                                isMovingToSpam = false
+                                            }
+                                            
+                                            // Return to inbox if this was the only message
+                                            if (selectedConversationMessages.size <= 1) {
+                                                currentScreen = Screen.Inbox
+                                            }
+                                        }
+                                    },
                                     isDefault = state.isDefaultSmsApp
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
