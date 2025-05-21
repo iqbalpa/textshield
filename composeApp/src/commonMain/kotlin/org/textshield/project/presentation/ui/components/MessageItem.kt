@@ -95,9 +95,13 @@ fun MessageItem(
             
             // Message content
             Text(
-                text = message.content,
+                text = message.content.let { 
+                    if (it.length > 50) it.take(50) + "..." else it 
+                },
                 style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
             
             // If spam, show confidence score and detection method
@@ -207,10 +211,33 @@ fun SpamConfidenceIndicator(
 }
 
 /**
- * Format timestamp to a readable date/time
+ * Format timestamp according to the requirements:
+ * - If the message was received today, show the time (e.g., "3:45 PM")
+ * - If the message was received yesterday, show "Yesterday"
+ * - Otherwise, show the date in MMM dd format (e.g., "May 19")
  */
 private fun formatTimestamp(timestamp: Long): String {
-    val date = Date(timestamp)
-    val format = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
-    return format.format(date)
+    val calendar = Calendar.getInstance()
+    val now = calendar.clone() as Calendar
+    
+    calendar.timeInMillis = timestamp
+    
+    // Check if the message is from today
+    if (calendar.get(Calendar.YEAR) == now.get(Calendar.YEAR) &&
+        calendar.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR)) {
+        // Format as time: 3:45 PM 
+        val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+        return timeFormat.format(Date(timestamp))
+    }
+    
+    // Check if the message is from yesterday
+    calendar.add(Calendar.DAY_OF_YEAR, 1)
+    if (calendar.get(Calendar.YEAR) == now.get(Calendar.YEAR) &&
+        calendar.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR)) {
+        return "Yesterday"
+    }
+    
+    // Otherwise format as MMM dd (e.g., "May 19")
+    val dateFormat = SimpleDateFormat("MMM dd", Locale.getDefault())
+    return dateFormat.format(Date(timestamp))
 } 

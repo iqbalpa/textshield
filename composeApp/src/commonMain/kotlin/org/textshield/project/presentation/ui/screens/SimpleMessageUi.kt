@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,6 +34,8 @@ import org.textshield.project.domain.model.SpamAction
 import org.textshield.project.presentation.di.Dependencies
 import org.textshield.project.presentation.viewmodel.InboxTab
 import org.textshield.project.presentation.viewmodel.InboxViewModel
+import java.text.SimpleDateFormat
+import java.util.*
 
 /**
  * Simple message screen for inbox with modern UI
@@ -277,13 +280,28 @@ fun SimpleMessageScreen() {
                             )
                         }
                         
-                        // Messages
+                        // Sort messages by timestamp (oldest to newest)
+                        val sortedMessages = remember(selectedConversationMessages) {
+                            selectedConversationMessages.sortedBy { it.timestamp }
+                        }
+                        
+                        // Use rememberLazyListState to control scrolling
+                        val listState = rememberLazyListState()
+                        
+                        // Automatically scroll to bottom when conversation opens
+                        LaunchedEffect(sortedMessages) {
+                            if (sortedMessages.isNotEmpty()) {
+                                listState.scrollToItem(sortedMessages.size - 1)
+                            }
+                        }
+                        
+                        // Messages - displayed in chronological order (oldest first)
                         LazyColumn(
+                            state = listState,
                             modifier = Modifier.fillMaxSize(),
-                            reverseLayout = false,
                             contentPadding = PaddingValues(16.dp)
                         ) {
-                            items(selectedConversationMessages.sortedBy { it.timestamp }) { message ->
+                            items(sortedMessages) { message ->
                                 SimpleChatBubble(
                                     message = message,
                                     onDelete = { 
@@ -648,23 +666,32 @@ private fun SimpleMessageItem(
                 
                 Spacer(modifier = Modifier.height(4.dp))
                 
-                // Message preview
+                // Message preview - limit to approximately 50 characters
                 Text(
-                    text = message.content,
+                    text = message.content.let { 
+                        if (it.length > 50) it.take(50) + "..." else it 
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f)
                 )
                 
                 if (message.isSpam) {
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = Icons.Default.Block,
-                        contentDescription = "Spam Message",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(16.dp)
-                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Block,
+                            contentDescription = "Spam Message",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Spam",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
             
@@ -846,17 +873,34 @@ private fun SimpleChatBubble(
     }
 }
 
-// Simple timestamp formatter, in real app this would be formatted properly
+// Format timestamp according to the requirements:
+// - If the message was received today, show the time (e.g., "3:45 PM")
+// - If the message was received yesterday, show "Yesterday"
+// - Otherwise, show the date in MMM dd format (e.g., "May 19")
 private fun formatTimestamp(timestamp: Long): String {
-    // Convert timestamp to relative time like "Today", "Yesterday", or "Aug 15"
-    val now = System.currentTimeMillis()
-    val diff = now - timestamp
+    val calendar = Calendar.getInstance()
+    val now = calendar.clone() as Calendar
     
-    return when {
-        diff < 24 * 60 * 60 * 1000 -> "Today"
-        diff < 48 * 60 * 60 * 1000 -> "Yesterday"
-        else -> "Older"
+    calendar.timeInMillis = timestamp
+    
+    // Check if the message is from today
+    if (calendar.get(Calendar.YEAR) == now.get(Calendar.YEAR) &&
+        calendar.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR)) {
+        // Format as time: 3:45 PM 
+        val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+        return timeFormat.format(Date(timestamp))
     }
+    
+    // Check if the message is from yesterday
+    calendar.add(Calendar.DAY_OF_YEAR, 1)
+    if (calendar.get(Calendar.YEAR) == now.get(Calendar.YEAR) &&
+        calendar.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR)) {
+        return "Yesterday"
+    }
+    
+    // Otherwise format as MMM dd (e.g., "May 19")
+    val dateFormat = SimpleDateFormat("MMM dd", Locale.getDefault())
+    return dateFormat.format(Date(timestamp))
 }
 
 // Screens for navigation

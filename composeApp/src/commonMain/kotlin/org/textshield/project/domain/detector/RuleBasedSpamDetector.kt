@@ -18,7 +18,8 @@ class RuleBasedSpamDetector : SpamDetector {
         "you've been selected", "guaranteed", "risk-free", "double your money",
         "earn money fast", "discount", "best price", "call now", "get rich", "money back",
 
-        "cair", "dana darurat", "paylater", "bayar nanti", "bayar kemudian", "bayar kembali", "proses mudah", "limit", "coin", "COIN", "cicilan", "Cicilan"
+        "cair", "dana darurat", "paylater", "bayar nanti", "bayar kemudian", "bayar kembali", "proses mudah", "limit", "coin", "COIN", "cicilan", "Cicilan", 
+        "terpilih", "Terpilih", "TERPILIH"
     )
     
     // Initialize to true by default for immediate use
