@@ -121,13 +121,7 @@ private fun InboxScreenContent(
                 )
             }
             
-            // Settings action selector
             if (state.currentTab == InboxTab.SPAM) {
-                SpamActionSelector(
-                    currentAction = state.defaultSpamAction,
-                    onActionSelected = onSetDefaultSpamAction
-                )
-                
                 // Show bulk actions toolbar only in spam tab
                 if (state.spamMessages.isNotEmpty()) {
                     BulkActionsToolbar(

@@ -72,28 +72,92 @@ fun SimpleMessageScreen() {
     
     // Helper functions for spam actions
     fun handleMarkAsNotSpam(messageId: String) {
-        viewModel.markMessageSpamStatus(messageId, false)
+        // Find the sender of this message
+        val message = state.spamMessages.find { it.id == messageId }
+        if (message != null) {
+            // Mark all messages from this sender as not spam
+            viewModel.markAllMessagesFromSenderAsNotSpam(message.sender)
+            
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = "All messages from ${message.sender} moved to Inbox",
+                    duration = SnackbarDuration.Short,
+                    withDismissAction = true
+                )
+            }
+        } else {
+            // Fallback to single message if sender not found
+            viewModel.markMessageSpamStatus(messageId, false)
+            
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = "Message moved to Inbox",
+                    duration = SnackbarDuration.Short,
+                    withDismissAction = true
+                )
+            }
+        }
+    }
+    
+    fun handleDeleteMessage(messageId: String, fromSpam: Boolean) {
+        // Find the sender of this message
+        val messages = if (fromSpam) state.spamMessages else state.inboxMessages
+        val message = messages.find { it.id == messageId }
         
-        scope.launch {
-            snackbarHostState.showSnackbar(
-                message = "Message moved to Inbox",
-                duration = SnackbarDuration.Short,
-                withDismissAction = true
-            )
+        if (message != null) {
+            // Delete all messages from this sender
+            viewModel.deleteAllMessagesFromSender(message.sender, fromSpam)
+            
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = "All messages from ${message.sender} deleted",
+                    duration = SnackbarDuration.Short,
+                    withDismissAction = true
+                )
+            }
+        } else {
+            // Fallback to single message if sender not found
+            viewModel.performSpamAction(messageId, SpamAction.REMOVED)
+            
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = "Message deleted",
+                    duration = SnackbarDuration.Short,
+                    withDismissAction = true
+                )
+            }
         }
     }
     
     fun handleMarkAsSpam(messageId: String) {
-        isMovingToSpam = true
-        viewModel.markMessageSpamStatus(messageId, true)
-        
-        scope.launch {
-            snackbarHostState.showSnackbar(
-                message = "Message moved to Spam",
-                duration = SnackbarDuration.Short,
-                withDismissAction = true
-            )
-            isMovingToSpam = false
+        // Find the sender of this message
+        val message = state.inboxMessages.find { it.id == messageId }
+        if (message != null) {
+            isMovingToSpam = true
+            // Mark all messages from this sender as spam
+            viewModel.markAllMessagesFromSenderAsSpam(message.sender)
+            
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = "All messages from ${message.sender} moved to Spam",
+                    duration = SnackbarDuration.Short,
+                    withDismissAction = true
+                )
+                isMovingToSpam = false
+            }
+        } else {
+            // Fallback to single message if sender not found
+            isMovingToSpam = true
+            viewModel.markMessageSpamStatus(messageId, true)
+            
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = "Message moved to Spam",
+                    duration = SnackbarDuration.Short,
+                    withDismissAction = true
+                )
+                isMovingToSpam = false
+            }
         }
     }
     
@@ -292,7 +356,7 @@ fun SimpleMessageScreen() {
                                         onClick = { openConversation(message.sender, messagesBySender[message.sender] ?: emptyList()) },
                                         onMarkAsSpam = { handleMarkAsSpam(message.id) },
                                         onMarkAsNotSpam = { handleMarkAsNotSpam(message.id) },
-                                        onDelete = { viewModel.performSpamAction(message.id, SpamAction.REMOVED) },
+                                        onDelete = { handleDeleteMessage(message.id, false) },
                                         isDefault = state.isDefaultSmsApp,
                                         isSelected = false,
                                         onToggleSelection = null,
@@ -342,13 +406,7 @@ fun SimpleMessageScreen() {
                             )
                         }
                         
-                        // Settings action selector
-                        SpamActionSelector(
-                            currentAction = state.defaultSpamAction,
-                            onActionSelected = { viewModel.setDefaultSpamAction(it) }
-                        )
-                        
-                        // Show bulk actions toolbar if there are spam messages
+                                                // Show bulk actions toolbar if there are spam messages
                         if (state.spamMessages.isNotEmpty()) {
                             BulkActionsToolbar(
                                 selectedCount = state.selectedMessageIds.size,
@@ -397,7 +455,7 @@ fun SimpleMessageScreen() {
                                         },
                                         onMarkAsSpam = { handleMarkAsSpam(message.id) },
                                         onMarkAsNotSpam = { handleMarkAsNotSpam(message.id) },
-                                        onDelete = { viewModel.performSpamAction(message.id, SpamAction.REMOVED) },
+                                        onDelete = { handleDeleteMessage(message.id, true) },
                                         isDefault = state.isDefaultSmsApp,
                                         isSelected = isSelected,
                                         onToggleSelection = { viewModel.toggleMessageSelection(message.id) },
@@ -507,29 +565,23 @@ fun SimpleMessageScreen() {
                                 SimpleChatBubble(
                                     message = message,
                                     onDelete = { 
-                                        viewModel.performSpamAction(message.id, SpamAction.REMOVED)
-                                        // If this was the last message, go back to the previous screen
+                                        // Delete message and all messages from the same sender
+                                        val isSpam = message.isSpam
+                                        handleDeleteMessage(message.id, isSpam)
+                                        
+                                        // Return to appropriate screen if this was the last message
                                         if (selectedConversationMessages.size <= 1) {
-                                            currentScreen = if (message.isSpam) Screen.Spam else Screen.Inbox
+                                            currentScreen = if (isSpam) Screen.Spam else Screen.Inbox
                                         }
                                     },
                                     onMarkAsSpam = {
                                         if (message.isSpam) {
                                             // Mark as not spam
-                                            viewModel.markMessageSpamStatus(message.id, false)
+                                            handleMarkAsNotSpam(message.id)
                                         } else {
                                             // Mark as spam
                                             isMovingToSpam = true
-                                            viewModel.markMessageSpamStatus(message.id, true)
-                                            
-                                            scope.launch {
-                                                snackbarHostState.showSnackbar(
-                                                    message = "Message moved to Spam",
-                                                    duration = SnackbarDuration.Short,
-                                                    withDismissAction = true
-                                                )
-                                                isMovingToSpam = false
-                                            }
+                                            handleMarkAsSpam(message.id)
                                             
                                             // Return to inbox if this was the only message
                                             if (selectedConversationMessages.size <= 1) {
@@ -718,59 +770,6 @@ private fun DefaultSmsAppWarning(
                     text = "Message deletion requires TextShield to be your default SMS app",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SpamActionSelector(
-    currentAction: SpamAction,
-    onActionSelected: (SpamAction) -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Text(
-                text = "Default action for detected spam:",
-                style = MaterialTheme.typography.bodyLarge
-            )
-            
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                RadioButton(
-                    selected = currentAction == SpamAction.MARKED,
-                    onClick = { onActionSelected(SpamAction.MARKED) }
-                )
-                Text(
-                    text = "Mark as spam",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.clickable { onActionSelected(SpamAction.MARKED) }
-                )
-                
-                Spacer(modifier = Modifier.width(24.dp))
-                
-                RadioButton(
-                    selected = currentAction == SpamAction.REMOVED,
-                    onClick = { onActionSelected(SpamAction.REMOVED) }
-                )
-                Text(
-                    text = "Remove message",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.clickable { onActionSelected(SpamAction.REMOVED) }
                 )
             }
         }
@@ -1059,7 +1058,26 @@ private fun SimpleMessageItem(
         AlertDialog(
             onDismissRequest = { showActions = false },
             title = { Text("Message Actions") },
-            text = { Text("What would you like to do with this message?") },
+            text = { 
+                Column {
+                    Text("What would you like to do with messages from ${message.sender}?")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    if (!message.isSpam) {
+                        Text(
+                            "Note: Actions will affect all messages from this sender",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    } else {
+                        Text(
+                            "Note: Actions will affect all messages from this sender",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            },
             confirmButton = {
                 if (isDefault && onDelete != null) {
                     TextButton(
@@ -1216,27 +1234,39 @@ private fun SimpleChatBubble(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             ) {
-                Row(
+                Column(
                     modifier = Modifier.padding(8.dp)
                 ) {
-                    TextButton(
-                        onClick = {
-                            onMarkAsSpam()
-                            showActions = false
-                        },
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        Text(if (message.isSpam) "Not Spam" else "Mark as Spam")
-                    }
+                    // Show notification about affecting all messages
+                    Text(
+                        text = "Actions will affect all messages from this sender",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
                     
-                    if (isDefault) {
+                    Row(
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
                         TextButton(
                             onClick = {
-                                onDelete()
+                                onMarkAsSpam()
                                 showActions = false
-                            }
+                            },
+                            modifier = Modifier.padding(end = 8.dp)
                         ) {
-                            Text("Delete", color = MaterialTheme.colorScheme.error)
+                            Text(if (message.isSpam) "Not Spam" else "Mark as Spam")
+                        }
+                        
+                        if (isDefault) {
+                            TextButton(
+                                onClick = {
+                                    onDelete()
+                                    showActions = false
+                                }
+                            ) {
+                                Text("Delete", color = MaterialTheme.colorScheme.error)
+                            }
                         }
                     }
                 }
