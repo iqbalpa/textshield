@@ -13,20 +13,29 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,6 +62,11 @@ fun SimpleMessageScreen() {
     // Remember which conversations have been viewed to reset unread counts
     var viewedConversations by remember { mutableStateOf(setOf<String>()) }
     
+    // Search functionality state
+    var isSearchActive by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    val searchTextFieldFocusRequester = remember { FocusRequester() }
+    
     // Automatically show spam tab if there are spam messages
     LaunchedEffect(state.spamMessages) {
         if (state.spamMessages.isNotEmpty()) {
@@ -75,6 +89,17 @@ fun SimpleMessageScreen() {
         }
     }
     
+    // When search is activated, automatically focus the text field
+    LaunchedEffect(isSearchActive) {
+        if (isSearchActive) {
+            try {
+                searchTextFieldFocusRequester.requestFocus()
+            } catch (e: Exception) {
+                // Handle potential focus request exceptions
+            }
+        }
+    }
+    
     var selectedConversationId by remember { mutableStateOf<String?>(null) }
     var selectedConversationMessages by remember { mutableStateOf<List<SmsMessage>>(emptyList()) }
     
@@ -85,6 +110,31 @@ fun SimpleMessageScreen() {
     
     val spamMessagesBySender = remember(state.spamMessages) {
         state.spamMessages.groupBy { it.sender }
+    }
+    
+    // Filter messages based on search query if search is active
+    val filteredMessagesBySender = remember(messagesBySender, searchQuery, isSearchActive) {
+        if (!isSearchActive || searchQuery.isBlank()) {
+            messagesBySender
+        } else {
+            val lowercaseQuery = searchQuery.lowercase()
+            messagesBySender.filter { (sender, messages) ->
+                sender.lowercase().contains(lowercaseQuery) ||
+                messages.any { it.content.lowercase().contains(lowercaseQuery) }
+            }
+        }
+    }
+    
+    val filteredSpamMessagesBySender = remember(spamMessagesBySender, searchQuery, isSearchActive) {
+        if (!isSearchActive || searchQuery.isBlank()) {
+            spamMessagesBySender
+        } else {
+            val lowercaseQuery = searchQuery.lowercase()
+            spamMessagesBySender.filter { (sender, messages) ->
+                sender.lowercase().contains(lowercaseQuery) ||
+                messages.any { it.content.lowercase().contains(lowercaseQuery) }
+            }
+        }
     }
     
     // Function to open a conversation and mark it as viewed
@@ -127,19 +177,33 @@ fun SimpleMessageScreen() {
             when (currentScreen) {
                 is Screen.Inbox -> {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        // App bar - updated to match reference design
-                        ModernAppBar(
-                            title = "Messages",
-                            currentTab = InboxTab.INBOX,
-                            onTabChanged = { 
-                                viewModel.setCurrentTab(it)
-                                currentScreen = when(it) {
-                                    InboxTab.INBOX -> Screen.Inbox
-                                    InboxTab.SPAM -> Screen.Spam
-                                }
-                            },
-                            onRefresh = { viewModel.loadMessages() }
-                        )
+                        // App bar - either search bar or regular app bar
+                        if (isSearchActive) {
+                            SearchAppBar(
+                                searchQuery = searchQuery,
+                                onSearchQueryChange = { searchQuery = it },
+                                onCloseSearch = { 
+                                    isSearchActive = false 
+                                    searchQuery = ""
+                                },
+                                focusRequester = searchTextFieldFocusRequester
+                            )
+                        } else {
+                            // Regular app bar
+                            ModernAppBar(
+                                title = "Messages",
+                                currentTab = InboxTab.INBOX,
+                                onTabChanged = { 
+                                    viewModel.setCurrentTab(it)
+                                    currentScreen = when(it) {
+                                        InboxTab.INBOX -> Screen.Inbox
+                                        InboxTab.SPAM -> Screen.Spam
+                                    }
+                                },
+                                onRefresh = { viewModel.loadMessages() },
+                                onSearchClick = { isSearchActive = true }
+                            )
+                        }
                         
                         // Default SMS app warning
                         if (!state.isDefaultSmsApp) {
@@ -156,13 +220,13 @@ fun SimpleMessageScreen() {
                             ) {
                                 CircularProgressIndicator()
                             }
-                        } else if (messagesBySender.isEmpty()) {
+                        } else if (filteredMessagesBySender.isEmpty()) {
                             Box(
                                 modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = "Your inbox is empty",
+                                    text = if (isSearchActive) "No messages match your search" else "Your inbox is empty",
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -173,7 +237,7 @@ fun SimpleMessageScreen() {
                                 contentPadding = PaddingValues(vertical = 8.dp)
                             ) {
                                 items(
-                                    messagesBySender.map { (sender, messages) -> 
+                                    filteredMessagesBySender.map { (sender, messages) -> 
                                         messages.maxByOrNull { it.timestamp } ?: messages.first()
                                     }.sortedByDescending { it.timestamp }
                                 ) { message ->
@@ -205,19 +269,33 @@ fun SimpleMessageScreen() {
                 
                 is Screen.Spam -> {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        // App bar - updated to match reference design
-                        ModernAppBar(
-                            title = "Messages",
-                            currentTab = InboxTab.SPAM,
-                            onTabChanged = { 
-                                viewModel.setCurrentTab(it)
-                                currentScreen = when(it) {
-                                    InboxTab.INBOX -> Screen.Inbox
-                                    InboxTab.SPAM -> Screen.Spam
-                                }
-                            },
-                            onRefresh = { viewModel.loadMessages() }
-                        )
+                        // App bar - either search bar or regular app bar
+                        if (isSearchActive) {
+                            SearchAppBar(
+                                searchQuery = searchQuery,
+                                onSearchQueryChange = { searchQuery = it },
+                                onCloseSearch = { 
+                                    isSearchActive = false 
+                                    searchQuery = ""
+                                },
+                                focusRequester = searchTextFieldFocusRequester
+                            )
+                        } else {
+                            // Regular app bar
+                            ModernAppBar(
+                                title = "Messages",
+                                currentTab = InboxTab.SPAM,
+                                onTabChanged = { 
+                                    viewModel.setCurrentTab(it)
+                                    currentScreen = when(it) {
+                                        InboxTab.INBOX -> Screen.Inbox
+                                        InboxTab.SPAM -> Screen.Spam
+                                    }
+                                },
+                                onRefresh = { viewModel.loadMessages() },
+                                onSearchClick = { isSearchActive = true }
+                            )
+                        }
                         
                         // Default SMS app warning
                         if (!state.isDefaultSmsApp) {
@@ -253,9 +331,10 @@ fun SimpleMessageScreen() {
                             ) {
                                 CircularProgressIndicator()
                             }
-                        } else if (spamMessagesBySender.isEmpty()) {
+                        } else if (filteredSpamMessagesBySender.isEmpty()) {
                             SpamEmptyState(
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize(),
+                                isSearchActive = isSearchActive
                             )
                         } else {
                             LazyColumn(
@@ -263,7 +342,7 @@ fun SimpleMessageScreen() {
                                 contentPadding = PaddingValues(vertical = 8.dp)
                             ) {
                                 items(
-                                    spamMessagesBySender.map { (sender, messages) -> 
+                                    filteredSpamMessagesBySender.map { (sender, messages) -> 
                                         messages.maxByOrNull { it.timestamp } ?: messages.first()
                                     }.sortedByDescending { it.timestamp }
                                 ) { message ->
@@ -370,7 +449,8 @@ private fun ModernAppBar(
     title: String,
     currentTab: InboxTab,
     onTabChanged: (InboxTab) -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onSearchClick: () -> Unit
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceDim,
@@ -393,7 +473,7 @@ private fun ModernAppBar(
                 
                 Row(horizontalArrangement = Arrangement.End) {
                     // Search icon
-                    IconButton(onClick = { /* Search functionality */ }) {
+                    IconButton(onClick = onSearchClick) {
                         Icon(
                             imageVector = Icons.Default.Search,
                             contentDescription = "Search",
@@ -461,7 +541,8 @@ private fun ModernAppBar(
 
 @Composable
 private fun SpamEmptyState(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isSearchActive: Boolean
 ) {
     Box(
         modifier = modifier,
@@ -480,7 +561,7 @@ private fun SpamEmptyState(
             Spacer(modifier = Modifier.height(16.dp))
             
             Text(
-                text = "No spam messages",
+                text = if (isSearchActive) "No spam messages match your search" else "No spam messages",
                 style = MaterialTheme.typography.headlineSmall
             )
             
@@ -1152,4 +1233,70 @@ private fun Color.Companion.hsv(hue: Float, saturation: Float, value: Float): Co
         blue = b + m,
         alpha = 1f
     )
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun SearchAppBar(
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    onCloseSearch: () -> Unit,
+    focusRequester: FocusRequester
+) {
+    val keyboardController = LocalSoftwareKeyboardController.current
+    
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceDim,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shadowElevation = 4.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onCloseSearch) {
+                Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "Close Search",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            
+            TextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester),
+                placeholder = { Text("Search messages...") },
+                singleLine = true,
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    disabledContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent
+                ),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(
+                    onSearch = {
+                        keyboardController?.hide()
+                    }
+                ),
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { onSearchQueryChange("") }) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Clear Search",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            )
+        }
+    }
 } 
