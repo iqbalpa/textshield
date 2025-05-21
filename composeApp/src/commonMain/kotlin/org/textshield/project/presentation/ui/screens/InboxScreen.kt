@@ -33,7 +33,11 @@ fun InboxScreen(viewModel: InboxViewModel) {
         onMarkAsNotSpam = { viewModel.markMessageSpamStatus(it, false) },
         onRemoveMessage = { viewModel.performSpamAction(it, SpamAction.REMOVED) },
         onSetDefaultSpamAction = { viewModel.setDefaultSpamAction(it) },
-        onRefresh = { viewModel.loadMessages() }
+        onRefresh = { viewModel.loadMessages() },
+        onToggleMessageSelection = { viewModel.toggleMessageSelection(it) },
+        onSelectAllSpam = { viewModel.selectAllSpamMessages() },
+        onClearSelections = { viewModel.clearAllSelections() },
+        onDeleteSelected = { viewModel.deleteSelectedMessages() }
     )
 }
 
@@ -45,7 +49,11 @@ private fun InboxScreenContent(
     onMarkAsNotSpam: (String) -> Unit,
     onRemoveMessage: (String) -> Unit,
     onSetDefaultSpamAction: (SpamAction) -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onToggleMessageSelection: (String) -> Unit,
+    onSelectAllSpam: () -> Unit,
+    onClearSelections: () -> Unit,
+    onDeleteSelected: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -119,6 +127,19 @@ private fun InboxScreenContent(
                     currentAction = state.defaultSpamAction,
                     onActionSelected = onSetDefaultSpamAction
                 )
+                
+                // Show bulk actions toolbar only in spam tab
+                if (state.spamMessages.isNotEmpty()) {
+                    BulkActionsToolbar(
+                        selectedCount = state.selectedMessageIds.size,
+                        totalCount = state.spamMessages.size,
+                        onSelectAll = onSelectAllSpam, 
+                        onClearSelections = onClearSelections,
+                        onDeleteSelected = onDeleteSelected,
+                        isDeleteInProgress = state.isBulkDeleteInProgress,
+                        isDefaultSmsApp = state.isDefaultSmsApp
+                    )
+                }
             }
             
             // Content based on selected tab
@@ -129,15 +150,19 @@ private fun InboxScreenContent(
                     emptyMessage = "Your inbox is empty",
                     onMarkAsSpam = onMarkAsSpam,
                     onMarkAsNotSpam = onMarkAsNotSpam,
-                    onRemoveMessage = onRemoveMessage
+                    onRemoveMessage = onRemoveMessage,
+                    selectedMessageIds = state.selectedMessageIds,
+                    onToggleSelection = null // Not used in inbox tab
                 )
                 InboxTab.SPAM -> MessageList(
                     messages = state.spamMessages,
-                    isLoading = state.isLoading,
+                    isLoading = state.isLoading || state.isBulkDeleteInProgress,
                     emptyMessage = "No spam messages",
                     onMarkAsSpam = onMarkAsSpam,
                     onMarkAsNotSpam = onMarkAsNotSpam,
-                    onRemoveMessage = onRemoveMessage
+                    onRemoveMessage = onRemoveMessage,
+                    selectedMessageIds = state.selectedMessageIds,
+                    onToggleSelection = onToggleMessageSelection
                 )
             }
             
@@ -147,6 +172,91 @@ private fun InboxScreenContent(
                     modifier = Modifier.padding(16.dp)
                 ) {
                     Text(error)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BulkActionsToolbar(
+    selectedCount: Int,
+    totalCount: Int,
+    onSelectAll: () -> Unit,
+    onClearSelections: () -> Unit,
+    onDeleteSelected: () -> Unit,
+    isDeleteInProgress: Boolean,
+    isDefaultSmsApp: Boolean
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            // Selection status
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "$selectedCount of $totalCount selected",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                
+                Row {
+                    // Select All button
+                    if (selectedCount < totalCount) {
+                        TextButton(onClick = onSelectAll) {
+                            Text("Select All")
+                        }
+                    } else if (selectedCount > 0) {
+                        // Clear selection button
+                        TextButton(onClick = onClearSelections) {
+                            Text("Clear Selection")
+                        }
+                    }
+                }
+            }
+            
+            // Delete button - only show if messages are selected
+            if (selectedCount > 0) {
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Button(
+                    onClick = onDeleteSelected,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isDeleteInProgress && isDefaultSmsApp,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    if (isDeleteInProgress) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = MaterialTheme.colorScheme.onError,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(
+                        text = if (isDeleteInProgress) "Deleting..." else "Delete Selected ($selectedCount)"
+                    )
+                }
+                
+                if (!isDefaultSmsApp) {
+                    Text(
+                        text = "Set TextShield as your default SMS app to delete messages",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
             }
         }
@@ -239,7 +349,9 @@ private fun MessageList(
     emptyMessage: String,
     onMarkAsSpam: (String) -> Unit,
     onMarkAsNotSpam: (String) -> Unit,
-    onRemoveMessage: (String) -> Unit
+    onRemoveMessage: (String) -> Unit,
+    selectedMessageIds: Set<String> = emptySet(),
+    onToggleSelection: ((String) -> Unit)? = null
 ) {
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -259,11 +371,17 @@ private fun MessageList(
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
                 items(messages) { message ->
+                    val isSelected = selectedMessageIds.contains(message.id)
+                    
                     MessageItem(
                         message = message,
                         onMarkAsSpam = { onMarkAsSpam(message.id) },
                         onMarkAsNotSpam = { onMarkAsNotSpam(message.id) },
-                        onRemoveMessage = { onRemoveMessage(message.id) }
+                        onRemoveMessage = { onRemoveMessage(message.id) },
+                        isSelected = isSelected,
+                        onToggleSelection = if (onToggleSelection != null) {
+                            { onToggleSelection(message.id) }
+                        } else null
                     )
                 }
             }

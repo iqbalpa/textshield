@@ -24,7 +24,9 @@ data class InboxState(
     val error: String? = null,
     val currentTab: InboxTab = InboxTab.INBOX,
     val defaultSpamAction: SpamAction = SpamAction.MARKED,
-    val isDefaultSmsApp: Boolean = false
+    val isDefaultSmsApp: Boolean = false,
+    val selectedMessageIds: Set<String> = emptySet(),
+    val isBulkDeleteInProgress: Boolean = false
 )
 
 enum class InboxTab {
@@ -65,12 +67,19 @@ class InboxViewModel(
                 // Check if we're the default SMS app (platform specific implementation)
                 val isDefaultSmsApp = smsRepository.isDefaultSmsApp()
                 
+                // Filter out any selected message IDs that no longer exist
+                val existingMessageIds = (inboxMessages + spamMessages).map { it.id }.toSet()
+                val validSelectedIds = _state.value.selectedMessageIds.filter { 
+                    existingMessageIds.contains(it) 
+                }.toSet()
+                
                 _state.update { 
                     it.copy(
                         isLoading = false,
                         inboxMessages = inboxMessages,
                         spamMessages = spamMessages,
-                        isDefaultSmsApp = isDefaultSmsApp
+                        isDefaultSmsApp = isDefaultSmsApp,
+                        selectedMessageIds = validSelectedIds
                     )
                 }
             } catch (e: Exception) {
@@ -133,10 +142,12 @@ class InboxViewModel(
                         _state.update { currentState ->
                             val updatedInbox = currentState.inboxMessages.filter { it.id != messageId }
                             val updatedSpam = currentState.spamMessages.filter { it.id != messageId }
+                            val updatedSelectedIds = currentState.selectedMessageIds - messageId
                             
                             currentState.copy(
                                 inboxMessages = updatedInbox,
                                 spamMessages = updatedSpam,
+                                selectedMessageIds = updatedSelectedIds,
                                 isLoading = false
                             )
                         }
@@ -162,6 +173,106 @@ class InboxViewModel(
                     it.copy(
                         isLoading = false,
                         error = "Failed to perform action: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+    
+    /**
+     * Toggle selection of a message
+     */
+    fun toggleMessageSelection(messageId: String) {
+        _state.update { currentState ->
+            val newSelectedIds = if (currentState.selectedMessageIds.contains(messageId)) {
+                currentState.selectedMessageIds - messageId
+            } else {
+                currentState.selectedMessageIds + messageId
+            }
+            
+            currentState.copy(selectedMessageIds = newSelectedIds)
+        }
+    }
+    
+    /**
+     * Select all spam messages
+     */
+    fun selectAllSpamMessages() {
+        _state.update { currentState ->
+            val spamIds = currentState.spamMessages.map { it.id }.toSet()
+            currentState.copy(selectedMessageIds = spamIds)
+        }
+    }
+    
+    /**
+     * Clear all message selections
+     */
+    fun clearAllSelections() {
+        _state.update { it.copy(selectedMessageIds = emptySet()) }
+    }
+    
+    /**
+     * Delete all selected messages
+     */
+    fun deleteSelectedMessages() {
+        viewModelScope.launch {
+            // Check if the app is the default SMS app
+            if (!_state.value.isDefaultSmsApp) {
+                _state.update {
+                    it.copy(
+                        error = "TextShield must be the default SMS app to delete messages"
+                    )
+                }
+                return@launch
+            }
+            
+            val selectedIds = _state.value.selectedMessageIds
+            if (selectedIds.isEmpty()) {
+                _state.update {
+                    it.copy(error = "No messages selected for deletion")
+                }
+                return@launch
+            }
+            
+            _state.update { it.copy(isBulkDeleteInProgress = true) }
+            
+            try {
+                var successCount = 0
+                var failCount = 0
+                
+                // Process each message one by one
+                for (messageId in selectedIds) {
+                    val success = smsRepository.performSpamAction(messageId, SpamAction.REMOVED)
+                    if (success) {
+                        successCount++
+                    } else {
+                        failCount++
+                    }
+                }
+                
+                // Update UI with results
+                _state.update {
+                    val message = when {
+                        successCount > 0 && failCount == 0 -> "Successfully deleted $successCount messages"
+                        successCount > 0 && failCount > 0 -> "Deleted $successCount messages, failed to delete $failCount"
+                        else -> "Failed to delete messages"
+                    }
+                    
+                    it.copy(
+                        isBulkDeleteInProgress = false,
+                        selectedMessageIds = emptySet(),
+                        error = if (failCount > 0) message else null
+                    )
+                }
+                
+                // Reload messages to update the UI
+                loadMessages()
+                
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(
+                        isBulkDeleteInProgress = false,
+                        error = "Error deleting messages: ${e.message}"
                     )
                 }
             }

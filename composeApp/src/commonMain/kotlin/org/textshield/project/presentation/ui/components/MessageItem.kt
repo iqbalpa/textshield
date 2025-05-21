@@ -1,11 +1,14 @@
 package org.textshield.project.presentation.ui.components
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.textshield.project.domain.model.DetectionMethod
@@ -23,18 +26,34 @@ fun MessageItem(
     onMarkAsSpam: () -> Unit,
     onMarkAsNotSpam: () -> Unit,
     onRemoveMessage: () -> Unit = {},
+    isSelected: Boolean = false,
+    onToggleSelection: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val cardColor = if (message.isAutoProcessed) {
-        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
+    val isSelectable = onToggleSelection != null
+    
+    val cardColor = when {
+        isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+        message.isAutoProcessed -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
+        else -> MaterialTheme.colorScheme.surface
+    }
+    
+    val cardBorder = if (isSelected) {
+        Modifier.border(
+            width = 2.dp,
+            color = MaterialTheme.colorScheme.primary,
+            shape = RoundedCornerShape(12.dp)
+        )
     } else {
-        MaterialTheme.colorScheme.surface
+        Modifier
     }
     
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .then(cardBorder)
+            .clip(RoundedCornerShape(12.dp)),
         colors = CardDefaults.cardColors(containerColor = cardColor)
     ) {
         Column(
@@ -48,6 +67,15 @@ fun MessageItem(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Selection checkbox if in selection mode
+                if (isSelectable) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { onToggleSelection?.invoke() },
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                }
+                
                 Text(
                     text = message.sender,
                     style = MaterialTheme.typography.titleMedium,
