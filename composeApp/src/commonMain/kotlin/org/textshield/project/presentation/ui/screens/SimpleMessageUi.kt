@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlin.math.absoluteValue
 import kotlinx.coroutines.launch
 import org.textshield.project.domain.model.SmsMessage
 import org.textshield.project.domain.model.SpamAction
@@ -93,7 +96,16 @@ fun SimpleMessageScreen() {
         }
     }
 
+    val isDarkTheme = isSystemInDarkTheme()
+    val backgroundColor = if (isDarkTheme) {
+        Color(0xFF121212) // Dark background
+    } else {
+        MaterialTheme.colorScheme.background
+    }
+
     Scaffold(
+        containerColor = backgroundColor,
+        contentColor = MaterialTheme.colorScheme.onBackground,
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
         Box(modifier = Modifier
@@ -103,13 +115,16 @@ fun SimpleMessageScreen() {
             when (currentScreen) {
                 is Screen.Inbox -> {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        // App bar
-                        AppBar(
+                        // App bar - updated to match reference design
+                        ModernAppBar(
                             title = "Messages",
-                            isInbox = true,
-                            onToggle = { 
-                                viewModel.setCurrentTab(InboxTab.SPAM)
-                                currentScreen = Screen.Spam 
+                            currentTab = InboxTab.INBOX,
+                            onTabChanged = { 
+                                viewModel.setCurrentTab(it)
+                                currentScreen = when(it) {
+                                    InboxTab.INBOX -> Screen.Inbox
+                                    InboxTab.SPAM -> Screen.Spam
+                                }
                             },
                             onRefresh = { viewModel.loadMessages() }
                         )
@@ -169,13 +184,16 @@ fun SimpleMessageScreen() {
                 
                 is Screen.Spam -> {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        // App bar
-                        AppBar(
-                            title = "Spam" + if (state.spamMessages.isNotEmpty()) " (${state.spamMessages.size})" else "",
-                            isInbox = false,
-                            onToggle = { 
-                                viewModel.setCurrentTab(InboxTab.INBOX)
-                                currentScreen = Screen.Inbox 
+                        // App bar - updated to match reference design
+                        ModernAppBar(
+                            title = "Messages",
+                            currentTab = InboxTab.SPAM,
+                            onTabChanged = { 
+                                viewModel.setCurrentTab(it)
+                                currentScreen = when(it) {
+                                    InboxTab.INBOX -> Screen.Inbox
+                                    InboxTab.SPAM -> Screen.Spam
+                                }
                             },
                             onRefresh = { viewModel.loadMessages() }
                         )
@@ -325,43 +343,93 @@ fun SimpleMessageScreen() {
 }
 
 @Composable
-private fun AppBar(
+private fun ModernAppBar(
     title: String,
-    isInbox: Boolean,
-    onToggle: () -> Unit,
+    currentTab: InboxTab,
+    onTabChanged: (InboxTab) -> Unit,
     onRefresh: () -> Unit
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.surface,
+        color = MaterialTheme.colorScheme.surfaceDim,
+        contentColor = MaterialTheme.colorScheme.onSurface,
         shadowElevation = 4.dp
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge
-            )
-            
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Top bar with title and actions
             Row(
-                horizontalArrangement = Arrangement.End
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onRefresh) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Refresh",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge
+                )
+                
+                Row(horizontalArrangement = Arrangement.End) {
+                    // Search icon
+                    IconButton(onClick = { /* Search functionality */ }) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    
+                    // Refresh icon
+                    IconButton(onClick = onRefresh) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    
+                    // Menu icon
+                    IconButton(onClick = { /* More options */ }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "More Options",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
-                
-                Spacer(modifier = Modifier.width(8.dp))
-                
-                Button(onClick = onToggle) {
-                    Text(text = if (isInbox) "Spam" else "Inbox")
+            }
+            
+            // Custom tabs with pill shape indicators
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                InboxTab.values().forEach { tab ->
+                    val isSelected = tab == currentTab
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(36.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.secondaryContainer
+                                else Color.Transparent
+                            )
+                            .clickable { onTabChanged(tab) }
+                            .padding(horizontal = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = tab.displayName,
+                            color = if (isSelected) 
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            else 
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        )
+                    }
                 }
             }
         }
@@ -599,17 +667,43 @@ private fun SimpleMessageItem(
 ) {
     var showActions by remember { mutableStateOf(false) }
     
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        modifier = Modifier.fillMaxWidth()
+    // Get dark theme state at the composable level
+    val isDarkTheme = isSystemInDarkTheme()
+    
+    // Profile background color based on sender (consistent color for same sender)
+    val avatarBackgroundColor = remember(message.sender) {
+        // Generate a consistent color based on sender name
+        val hash = message.sender.hashCode()
+        val hue = (hash.absoluteValue % 360).toFloat()
+        val saturation = 0.7f
+        val lightness = if (isDarkTheme) 0.5f else 0.7f
+        
+        Color.hsv(hue = hue, saturation = saturation, value = lightness)
+    }
+    
+    // Determine text color for avatar based on background color brightness
+    val avatarTextColor = if (calculateLuminance(avatarBackgroundColor) > 0.5f) 
+        Color.Black else Color.White
+    
+    // Determine item background color
+    val backgroundColor = if (isDarkTheme) {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .background(
+                color = backgroundColor,
+                shape = RoundedCornerShape(0.dp)
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onClick)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Checkbox for selection in spam tab
@@ -621,20 +715,18 @@ private fun SimpleMessageItem(
                 )
             }
             
-            // Contact initial
+            // Contact initial with improved styling
             Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(40.dp)
                     .clip(CircleShape)
-                    .background(
-                        if (message.isSpam) MaterialTheme.colorScheme.errorContainer
-                        else MaterialTheme.colorScheme.primaryContainer
-                    ),
+                    .background(avatarBackgroundColor),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = message.sender.firstOrNull()?.toString() ?: "?",
-                    style = MaterialTheme.typography.titleMedium
+                    text = message.sender.firstOrNull()?.uppercase() ?: "?",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = avatarTextColor
                 )
             }
             
@@ -660,92 +752,103 @@ private fun SimpleMessageItem(
                     // Timestamp
                     Text(
                         text = formatTimestamp(message.timestamp),
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
                 }
                 
                 Spacer(modifier = Modifier.height(4.dp))
                 
-                // Message preview - limit to approximately 50 characters
-                Text(
-                    text = message.content.let { 
-                        if (it.length > 50) it.take(50) + "..." else it 
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                
-                if (message.isSpam) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Block,
-                            contentDescription = "Spam Message",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Spam",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
+                // Message preview with preview text
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = message.content.let { 
+                            if (it.length > 50) it.take(50) + "..." else it 
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    
+                    // Message count badge (for unread messages)
+                    if (message.isSpam) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.error),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "!",
+                                color = MaterialTheme.colorScheme.onError,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                        }
+                    } else {
+                        // This is where we would show unread count
                     }
                 }
             }
             
+            // Add more options menu
             Spacer(modifier = Modifier.width(8.dp))
-            
-            // Action buttons - replace text with icon
             IconButton(
-                onClick = { showActions = true }
+                onClick = { showActions = true },
+                modifier = Modifier.size(32.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
-                    contentDescription = "More Actions",
+                    contentDescription = "More Options",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
-        
-        // Message actions dialog
-        if (showActions) {
-            AlertDialog(
-                onDismissRequest = { showActions = false },
-                title = { Text("Message Actions") },
-                text = { Text("What would you like to do with this message?") },
-                confirmButton = {
-                    if (isDefault && onDelete != null) {
-                        TextButton(
-                            onClick = {
-                                onDelete()
-                                showActions = false
-                            }
-                        ) {
-                            Text("Delete", color = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                },
-                dismissButton = {
+    }
+    
+    // Message actions dialog
+    if (showActions) {
+        AlertDialog(
+            onDismissRequest = { showActions = false },
+            title = { Text("Message Actions") },
+            text = { Text("What would you like to do with this message?") },
+            confirmButton = {
+                if (isDefault && onDelete != null) {
                     TextButton(
                         onClick = {
-                            if (message.isSpam && onMarkAsNotSpam != null) {
-                                onMarkAsNotSpam()
-                            } else if (!message.isSpam && onMarkAsSpam != null) {
-                                onMarkAsSpam()
-                            }
+                            onDelete()
                             showActions = false
                         }
                     ) {
-                        Text(if (message.isSpam) "Not Spam" else "Mark as Spam")
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
                     }
                 }
-            )
-        }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        if (message.isSpam && onMarkAsNotSpam != null) {
+                            onMarkAsNotSpam()
+                        } else if (!message.isSpam && onMarkAsSpam != null) {
+                            onMarkAsSpam()
+                        }
+                        showActions = false
+                    }
+                ) {
+                    Text(if (message.isSpam) "Not Spam" else "Mark as Spam")
+                }
+            }
+        )
     }
-    
-    Divider(modifier = Modifier.padding(start = 80.dp))
 }
 
 @Composable
@@ -960,4 +1063,40 @@ sealed class Screen {
     object Inbox : Screen()
     object Spam : Screen()
     object Conversation : Screen()
+}
+
+// Extension property to get a darker surface color for app bars in dark theme
+private val ColorScheme.surfaceDim: Color
+    @Composable
+    get() = if (isSystemInDarkTheme()) {
+        Color(0xFF121212) // Darker surface for dark theme
+    } else {
+        surface // Regular surface for light theme
+    }
+
+// Function to convert HSV values to Color
+private fun Color.Companion.hsv(hue: Float, saturation: Float, value: Float): Color {
+    val h = hue / 60f
+    val s = saturation
+    val v = value
+    
+    val c = v * s
+    val x = c * (1f - kotlin.math.abs((h % 2f) - 1f))
+    val m = v - c
+    
+    val (r, g, b) = when {
+        h < 1f -> Triple(c, x, 0f)
+        h < 2f -> Triple(x, c, 0f)
+        h < 3f -> Triple(0f, c, x)
+        h < 4f -> Triple(0f, x, c)
+        h < 5f -> Triple(x, 0f, c)
+        else -> Triple(c, 0f, x)
+    }
+    
+    return Color(
+        red = r + m,
+        green = g + m,
+        blue = b + m,
+        alpha = 1f
+    )
 } 

@@ -29,8 +29,9 @@ data class InboxState(
     val isBulkDeleteInProgress: Boolean = false
 )
 
-enum class InboxTab {
-    INBOX, SPAM
+enum class InboxTab(val displayName: String) {
+    INBOX("Inbox"), 
+    SPAM("Spam")
 }
 
 /**
