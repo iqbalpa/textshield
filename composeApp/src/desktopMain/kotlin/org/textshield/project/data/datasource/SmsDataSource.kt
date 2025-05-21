@@ -1,0 +1,119 @@
+package org.textshield.project.data.datasource
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.textshield.project.domain.model.SmsMessage
+import java.util.*
+import kotlin.random.Random
+
+/**
+ * Desktop implementation of SmsDataSource
+ * Provides mock SMS messages for testing and development
+ */
+actual class SmsDataSource {
+    // Map to store mock messages, with message ID as key
+    private val mockMessages = mutableMapOf<String, SmsMessage>()
+    
+    init {
+        // Initialize with some mock messages
+        generateMockMessages().forEach { message ->
+            mockMessages[message.id] = message
+        }
+    }
+    
+    actual suspend fun getSmsMessages(): List<SmsMessage> = withContext(Dispatchers.IO) {
+        // Return a copy of the current messages
+        mockMessages.values.toList()
+    }
+    
+    actual suspend fun markMessageSpamStatus(messageId: String, isSpam: Boolean): Boolean = 
+        withContext(Dispatchers.IO) {
+            // Find the message and update its spam status
+            val message = mockMessages[messageId] ?: return@withContext false
+            mockMessages[messageId] = message.copy(isSpam = isSpam)
+            true
+        }
+    
+    /**
+     * Generate mock SMS messages for testing
+     */
+    private fun generateMockMessages(): List<SmsMessage> {
+        val messages = mutableListOf<SmsMessage>()
+        val currentTime = System.currentTimeMillis()
+        
+        // Standard messages
+        messages.add(
+            SmsMessage(
+                id = UUID.randomUUID().toString(),
+                sender = "+1234567890",
+                content = "Hi there! How are you doing today?",
+                timestamp = currentTime - 3600000, // 1 hour ago
+                isSpam = false
+            )
+        )
+        
+        messages.add(
+            SmsMessage(
+                id = UUID.randomUUID().toString(),
+                sender = "+1987654321",
+                content = "Don't forget our meeting at 3 PM tomorrow.",
+                timestamp = currentTime - 7200000, // 2 hours ago
+                isSpam = false
+            )
+        )
+        
+        // Spam messages
+        messages.add(
+            SmsMessage(
+                id = UUID.randomUUID().toString(),
+                sender = "+1555000999",
+                content = "CONGRATULATIONS! You've won a FREE prize worth $1000. Claim now!",
+                timestamp = currentTime - 10800000, // 3 hours ago
+                isSpam = true
+            )
+        )
+        
+        messages.add(
+            SmsMessage(
+                id = UUID.randomUUID().toString(),
+                sender = "PROMO",
+                content = "Limited time offer! Click here to get 90% off luxury items.",
+                timestamp = currentTime - 14400000, // 4 hours ago
+                isSpam = true
+            )
+        )
+        
+        messages.add(
+            SmsMessage(
+                id = UUID.randomUUID().toString(),
+                sender = "+1555123456",
+                content = "URGENT: Your account has been suspended. Verify immediately at ht tp://b it.ly/1a2b3c",
+                timestamp = currentTime - 18000000, // 5 hours ago
+                isSpam = true
+            )
+        )
+        
+        // Normal messages
+        messages.add(
+            SmsMessage(
+                id = UUID.randomUUID().toString(),
+                sender = "Mom",
+                content = "Hi honey, just checking in. Call me when you get a chance.",
+                timestamp = currentTime - 86400000, // 1 day ago
+                isSpam = false
+            )
+        )
+        
+        messages.add(
+            SmsMessage(
+                id = UUID.randomUUID().toString(),
+                sender = "+1444555666",
+                content = "Your package has been delivered. Thank you for choosing our service.",
+                timestamp = currentTime - 172800000, // 2 days ago
+                isSpam = false
+            )
+        )
+        
+        return messages
+    }
+} 
