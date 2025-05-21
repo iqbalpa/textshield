@@ -1,0 +1,292 @@
+package org.textshield.project.presentation.ui.screens
+
+import androidx.compose.animation.*
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.dp
+import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.navigator.LocalNavigator
+import cafe.adriel.voyager.navigator.currentOrThrow
+import org.textshield.project.domain.model.SmsMessage
+import org.textshield.project.domain.model.SpamAction
+import org.textshield.project.presentation.ui.components.ChatBubble
+import org.textshield.project.presentation.viewmodel.InboxViewModel
+import java.text.SimpleDateFormat
+import java.util.*
+
+/**
+ * Conversation screen showing a thread of messages with a specific contact
+ */
+@Composable
+fun ConversationScreen(
+    senderId: String,
+    messages: List<SmsMessage>,
+    viewModel: InboxViewModel
+) {
+    val state by viewModel.state.collectAsState()
+    val navigator = LocalNavigator.currentOrThrow
+    val lazyListState = rememberLazyListState()
+    
+    // Group messages by day for date separators
+    val messagesByDay = remember(messages) {
+        messages.sortedBy { it.timestamp }
+            .groupBy { message ->
+                val date = Date(message.timestamp)
+                val dateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                dateFormatter.format(date)
+            }
+    }
+    
+    // Any messages marked as spam from this conversation
+    val spamMessages = remember(messages) {
+        messages.filter { it.isSpam }
+    }
+    
+    // Track if we should show spam warning
+    val showSpamWarning = spamMessages.isNotEmpty()
+    
+    Scaffold(
+        topBar = {
+            ConversationTopBar(
+                sender = senderId,
+                onBack = { navigator.pop() },
+                showSpamWarning = showSpamWarning,
+                spamCount = spamMessages.size
+            )
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            // Spam warning if applicable
+            AnimatedVisibility(
+                visible = showSpamWarning,
+                enter = slideInVertically() + expandVertically() + fadeIn(),
+                exit = slideOutVertically() + shrinkVertically() + fadeOut()
+            ) {
+                SpamConversationWarning(
+                    spamCount = spamMessages.size,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
+            
+            // Message list
+            LazyColumn(
+                state = lazyListState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = if (showSpamWarning) 76.dp else 0.dp),
+                contentPadding = PaddingValues(vertical = 16.dp),
+                reverseLayout = false // Show oldest messages at top
+            ) {
+                messagesByDay.forEach { (day, dayMessages) ->
+                    // Add date separator
+                    item {
+                        DateSeparator(
+                            date = formatDateSeparator(day),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                        )
+                    }
+                    
+                    // Add messages for this day
+                    items(dayMessages) { message ->
+                        ChatBubble(
+                            message = message,
+                            isUserMessage = false, // For now we assume all messages are from the contact
+                            modifier = Modifier
+                                .padding(4.dp)
+                        )
+                    }
+                }
+            }
+            
+            // Error message if any
+            state.error?.let { error ->
+                Snackbar(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .align(Alignment.BottomCenter)
+                ) {
+                    Text(error)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConversationTopBar(
+    sender: String,
+    onBack: () -> Unit,
+    showSpamWarning: Boolean,
+    spamCount: Int
+) {
+    TopAppBar(
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Contact avatar
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = sender.first().toString(),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+                
+                Spacer(modifier = Modifier.width(12.dp))
+                
+                Column {
+                    Text(
+                        text = sender,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    
+                    if (showSpamWarning) {
+                        Text(
+                            text = "$spamCount spam message${if (spamCount > 1) "s" else ""}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "Back"
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface
+        )
+    )
+}
+
+@Composable
+private fun SpamConversationWarning(
+    spamCount: Int,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = "Warning",
+                tint = MaterialTheme.colorScheme.error
+            )
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            Text(
+                text = "This conversation contains $spamCount suspicious message${if (spamCount > 1) "s" else ""}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+        }
+    }
+}
+
+@Composable
+private fun DateSeparator(
+    date: String,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Divider(
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+        )
+        
+        Text(
+            text = date,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+        
+        Divider(
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+        )
+    }
+}
+
+/**
+ * Format date for separator
+ */
+private fun formatDateSeparator(dateStr: String): String {
+    try {
+        val inputFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val date = inputFormat.parse(dateStr) ?: return dateStr
+        
+        val today = Calendar.getInstance()
+        val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
+        val messageDate = Calendar.getInstance().apply { time = date }
+        
+        return when {
+            isSameDay(messageDate, today) -> "Today"
+            isSameDay(messageDate, yesterday) -> "Yesterday"
+            else -> {
+                val outputFormat = SimpleDateFormat("MMMM d, yyyy", Locale.getDefault())
+                outputFormat.format(date)
+            }
+        }
+    } catch (e: Exception) {
+        return dateStr
+    }
+}
+
+/**
+ * Check if two calendar dates are the same day
+ */
+private fun isSameDay(cal1: Calendar, cal2: Calendar): Boolean {
+    return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) &&
+            cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
+} 

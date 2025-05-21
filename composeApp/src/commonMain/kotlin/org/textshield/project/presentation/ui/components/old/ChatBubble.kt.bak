@@ -1,0 +1,122 @@
+package org.textshield.project.presentation.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import org.textshield.project.domain.model.SmsMessage
+import java.text.SimpleDateFormat
+import java.util.*
+
+/**
+ * A modern chat bubble component resembling Google Messages or iMessage
+ */
+@Composable
+fun ChatBubble(
+    message: SmsMessage,
+    isUserMessage: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val bubbleColor = when {
+        isUserMessage -> MaterialTheme.colorScheme.primaryContainer
+        message.isSpam -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    
+    val bubbleTextColor = when {
+        isUserMessage -> MaterialTheme.colorScheme.onPrimaryContainer
+        message.isSpam -> MaterialTheme.colorScheme.onErrorContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    
+    // Different bubble shapes for sender vs receiver
+    val bubbleShape = if (isUserMessage) {
+        RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp)
+    } else {
+        RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp)
+    }
+    
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(
+                start = if (isUserMessage) 64.dp else 8.dp,
+                end = if (isUserMessage) 8.dp else 64.dp,
+                top = 4.dp,
+                bottom = 4.dp
+            ),
+        horizontalAlignment = if (isUserMessage) Alignment.End else Alignment.Start
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(bubbleShape)
+                .background(bubbleColor)
+                .padding(12.dp)
+        ) {
+            Column {
+                // Message content
+                Text(
+                    text = message.content,
+                    color = bubbleTextColor,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                
+                // Timestamp
+                Text(
+                    text = formatBubbleTimestamp(message.timestamp),
+                    color = bubbleTextColor.copy(alpha = 0.7f),
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .align(if (isUserMessage) Alignment.End else Alignment.Start)
+                )
+                
+                // Spam warning if applicable
+                if (message.isSpam) {
+                    SpamWarning(message = message)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpamWarning(message: SmsMessage) {
+    Row(
+        modifier = Modifier
+            .padding(top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.Warning,
+            contentDescription = "Spam Warning",
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(16.dp)
+        )
+        
+        Spacer(modifier = Modifier.width(4.dp))
+        
+        Text(
+            text = "Spam (${(message.confidenceScore * 100).toInt()}% confidence)",
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.labelMedium
+        )
+    }
+}
+
+/**
+ * Format timestamp for chat bubbles
+ */
+private fun formatBubbleTimestamp(timestamp: Long): String {
+    val format = SimpleDateFormat("HH:mm", Locale.getDefault())
+    return format.format(timestamp)
+} 

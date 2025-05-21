@@ -37,6 +37,12 @@ kotlin {
         androidMain.dependencies {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
+            
+            // TensorFlow Lite dependencies
+            implementation("org.tensorflow:tensorflow-lite:2.12.0")
+            implementation("org.tensorflow:tensorflow-lite-task-text:0.4.4")
+            implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+            implementation("androidx.compose.material:material-icons-extended:1.6.0")
         }
         commonMain.dependencies {
             implementation(compose.runtime)
@@ -47,6 +53,11 @@ kotlin {
             implementation(compose.components.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodel)
             implementation(libs.androidx.lifecycle.runtimeCompose)
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+            // Navigation for Compose
+            implementation("cafe.adriel.voyager:voyager-navigator:1.0.0")
+            implementation("cafe.adriel.voyager:voyager-tab-navigator:1.0.0")
+            implementation("cafe.adriel.voyager:voyager-transitions:1.0.0")
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

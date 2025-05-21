@@ -1,0 +1,366 @@
+package org.textshield.project.presentation.ui.screens
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import cafe.adriel.voyager.core.screen.Screen
+import cafe.adriel.voyager.navigator.LocalNavigator
+import cafe.adriel.voyager.navigator.currentOrThrow
+import org.textshield.project.domain.model.SmsMessage
+import org.textshield.project.domain.model.SpamAction
+import org.textshield.project.presentation.navigation.openConversation
+import org.textshield.project.presentation.ui.components.MessageListItem
+import org.textshield.project.presentation.viewmodel.InboxViewModel
+
+/**
+ * Spam screen showing messages flagged as spam
+ */
+@Composable
+fun SpamScreen(viewModel: InboxViewModel) {
+    val state by viewModel.state.collectAsState()
+    val navigator = LocalNavigator.currentOrThrow
+    
+    // Group messages by sender
+    val messagesBySender = remember(state.spamMessages) {
+        state.spamMessages.groupBy { it.sender }
+    }
+    
+    Scaffold(
+        topBar = {
+            SpamTopBar(
+                selectedCount = state.selectedMessageIds.size,
+                hasSelections = state.selectedMessageIds.isNotEmpty(),
+                onClearSelection = { viewModel.clearAllSelections() },
+                onSelectAll = { viewModel.selectAllSpamMessages() },
+                onDeleteSelected = { viewModel.deleteSelectedMessages() },
+                onRefresh = { viewModel.loadMessages() },
+                isDeleteInProgress = state.isBulkDeleteInProgress,
+                isDefaultSmsApp = state.isDefaultSmsApp
+            )
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            // Default SMS app warning
+            if (!state.isDefaultSmsApp) {
+                DefaultSmsAppWarning(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                )
+            }
+            
+            // Loading indicator
+            AnimatedVisibility(
+                visible = state.isLoading || state.isBulkDeleteInProgress,
+                enter = fadeIn(animationSpec = tween(300)),
+                exit = fadeOut(animationSpec = tween(300))
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+            
+            // Message list
+            AnimatedVisibility(
+                visible = !state.isLoading && !state.isBulkDeleteInProgress,
+                enter = fadeIn(animationSpec = tween(300)),
+                exit = fadeOut(animationSpec = tween(300))
+            ) {
+                if (state.spamMessages.isEmpty()) {
+                    SpamEmptyState(
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        // Spam action selector
+                        SpamActionSelector(
+                            currentAction = state.defaultSpamAction,
+                            onActionSelected = { viewModel.setDefaultSpamAction(it) }
+                        )
+                        
+                        // Message list
+                        LazyColumn(
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) {
+                            items(
+                                // Get the most recent message from each sender
+                                messagesBySender.map { (_, messages) ->
+                                    messages.maxByOrNull { it.timestamp } ?: messages.first()
+                                }.sortedByDescending { it.timestamp }
+                            ) { message ->
+                                val isSelected = state.selectedMessageIds.contains(message.id)
+                                
+                                MessageListItem(
+                                    message = message,
+                                    onMessageClick = {
+                                        // Toggle selection if in selection mode, otherwise open conversation
+                                        if (state.selectedMessageIds.isNotEmpty()) {
+                                            viewModel.toggleMessageSelection(message.id)
+                                        } else {
+                                            val conversationMessages = messagesBySender[message.sender] ?: emptyList()
+                                            openConversation(navigator, message.sender, conversationMessages)
+                                        }
+                                    },
+                                    isSelected = isSelected,
+                                    onToggleSelection = {
+                                        viewModel.toggleMessageSelection(message.id)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Error message
+            state.error?.let { error ->
+                Snackbar(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .align(Alignment.BottomCenter)
+                ) {
+                    Text(error)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpamTopBar(
+    selectedCount: Int,
+    hasSelections: Boolean,
+    onClearSelection: () -> Unit,
+    onSelectAll: () -> Unit,
+    onDeleteSelected: () -> Unit,
+    onRefresh: () -> Unit,
+    isDeleteInProgress: Boolean,
+    isDefaultSmsApp: Boolean
+) {
+    TopAppBar(
+        title = {
+            if (hasSelections) {
+                Text(
+                    text = "$selectedCount selected",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            } else {
+                Text(
+                    text = "Spam",
+                    style = MaterialTheme.typography.headlineMedium
+                )
+            }
+        },
+        actions = {
+            if (hasSelections) {
+                // Selection mode actions
+                if (!isDeleteInProgress) {
+                    // Select all
+                    IconButton(onClick = onSelectAll) {
+                        Text(
+                            text = "All",
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    
+                    // Delete selected
+                    IconButton(
+                        onClick = onDeleteSelected,
+                        enabled = isDefaultSmsApp
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete Selected",
+                            tint = if (isDefaultSmsApp) 
+                                MaterialTheme.colorScheme.error 
+                            else
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                        )
+                    }
+                    
+                    // Cancel selection
+                    IconButton(onClick = onClearSelection) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Clear Selection"
+                        )
+                    }
+                }
+            } else {
+                // Normal mode actions
+                IconButton(onClick = onRefresh) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Refresh"
+                    )
+                }
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = if (hasSelections) 
+                MaterialTheme.colorScheme.primaryContainer
+            else 
+                MaterialTheme.colorScheme.surface,
+            titleContentColor = if (hasSelections)
+                MaterialTheme.colorScheme.onPrimaryContainer
+            else
+                MaterialTheme.colorScheme.onSurface
+        )
+    )
+}
+
+@Composable
+private fun SpamActionSelector(
+    currentAction: SpamAction,
+    onActionSelected: (SpamAction) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                text = "Default action for detected spam:",
+                style = MaterialTheme.typography.bodyLarge
+            )
+            
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(
+                    selected = currentAction == SpamAction.MARKED,
+                    onClick = { onActionSelected(SpamAction.MARKED) }
+                )
+                Text(
+                    text = "Mark as spam",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.clickable { onActionSelected(SpamAction.MARKED) }
+                )
+                
+                Spacer(modifier = Modifier.width(24.dp))
+                
+                RadioButton(
+                    selected = currentAction == SpamAction.REMOVED,
+                    onClick = { onActionSelected(SpamAction.REMOVED) }
+                )
+                Text(
+                    text = "Remove message",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.clickable { onActionSelected(SpamAction.REMOVED) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DefaultSmsAppWarning(
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = "Warning",
+                tint = MaterialTheme.colorScheme.error
+            )
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            Column {
+                Text(
+                    text = "Set TextShield as Default SMS App",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Text(
+                    text = "Message deletion requires TextShield to be your default SMS app",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpamEmptyState(
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "✓",
+                style = MaterialTheme.typography.displayLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Text(
+                text = "No spam messages",
+                style = MaterialTheme.typography.headlineSmall
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = "Your inbox is clean!",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+} 

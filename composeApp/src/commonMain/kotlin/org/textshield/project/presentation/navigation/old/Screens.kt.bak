@@ -1,0 +1,70 @@
+package org.textshield.project.presentation.navigation
+
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import cafe.adriel.voyager.navigator.Navigator
+import cafe.adriel.voyager.navigator.tab.Tab
+import cafe.adriel.voyager.navigator.tab.TabOptions
+import org.textshield.project.domain.model.SmsMessage
+import org.textshield.project.presentation.di.Dependencies
+import org.textshield.project.presentation.ui.screens.ConversationScreen
+import org.textshield.project.presentation.ui.screens.HomeScreen
+import org.textshield.project.presentation.ui.screens.SpamScreen
+
+// Tab navigation for the main screens
+object HomeTab : Tab {
+    override val options: TabOptions
+        @Composable
+        get() = TabOptions(
+            index = 0u,
+            title = "Messages",
+            icon = rememberVectorPainter(Icons.Filled.Email)
+        )
+
+    @Composable
+    override fun Content() {
+        HomeScreen(Dependencies.inboxViewModel) 
+    }
+}
+
+object SpamTab : Tab {
+    override val options: TabOptions
+        @Composable
+        get() = TabOptions(
+            index = 1u,
+            title = "Spam",
+            icon = rememberVectorPainter(Icons.Filled.Warning)
+        )
+
+    @Composable
+    override fun Content() {
+        SpamScreen(Dependencies.inboxViewModel)
+    }
+}
+
+// Navigation functions
+fun openConversation(navigator: Navigator, senderId: String, messages: List<SmsMessage>) {
+    navigator.push(ConversationScreenDestination(senderId, messages))
+}
+
+class ConversationScreenDestination(
+    private val senderId: String,
+    private val messages: List<SmsMessage>
+) : cafe.adriel.voyager.core.screen.Screen {
+    
+    @Composable
+    override fun Content() {
+        ConversationScreen(
+            senderId = senderId,
+            messages = messages,
+            viewModel = Dependencies.inboxViewModel
+        )
+    }
+} 

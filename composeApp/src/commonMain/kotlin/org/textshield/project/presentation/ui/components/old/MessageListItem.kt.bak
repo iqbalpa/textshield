@@ -1,0 +1,202 @@
+package org.textshield.project.presentation.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import org.textshield.project.domain.model.SmsMessage
+import java.text.SimpleDateFormat
+import java.util.Locale
+
+/**
+ * Modern message list item for main inbox/spam lists
+ */
+@Composable
+fun MessageListItem(
+    message: SmsMessage,
+    onMessageClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    isSelected: Boolean = false,
+    onToggleSelection: (() -> Unit)? = null
+) {
+    val isSelectable = onToggleSelection != null
+    
+    // Card styling based on state
+    val cardBgColor = when {
+        isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+        message.isSpam -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
+        else -> MaterialTheme.colorScheme.surface
+    }
+    
+    // Determine if message is read (for future use)
+    val isUnread = false  // Add this property to SmsMessage in the future
+    
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onMessageClick() }
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBgColor),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isSelected) 2.dp else 0.dp
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Optional selection checkbox
+            if (isSelectable) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onToggleSelection?.invoke() },
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+            }
+            
+            // Contact avatar
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (message.isSpam) 
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.2f)
+                        else 
+                            MaterialTheme.colorScheme.primaryContainer
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = message.sender.first().toString(),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (message.isSpam) 
+                                MaterialTheme.colorScheme.error 
+                            else 
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                
+                // Show warning icon for spam
+                if (message.isSpam) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Spam",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(16.dp)
+                            .background(MaterialTheme.colorScheme.surface, CircleShape)
+                            .padding(1.dp)
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            // Message content
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Sender name with unread indicator
+                    Text(
+                        text = message.sender,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = if (isUnread) FontWeight.Bold else FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    
+                    Spacer(modifier = Modifier.width(8.dp))
+                    
+                    // Timestamp
+                    Text(
+                        text = formatTimestamp(message.timestamp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isUnread)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(2.dp))
+                
+                // Message preview with optional spam indicator
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (message.isSpam) {
+                        Badge(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(end = 6.dp)
+                        ) {
+                            Text(
+                                text = "${(message.confidenceScore * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                    
+                    Text(
+                        text = message.content,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isUnread)
+                            MaterialTheme.colorScheme.onSurface
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Format timestamp to a readable time/date
+ */
+private fun formatTimestamp(timestamp: Long): String {
+    val now = System.currentTimeMillis()
+    val diff = now - timestamp
+    
+    return when {
+        // Today
+        diff < 24 * 60 * 60 * 1000 -> {
+            val format = SimpleDateFormat("HH:mm", Locale.getDefault())
+            format.format(timestamp)
+        }
+        // This week
+        diff < 7 * 24 * 60 * 60 * 1000 -> {
+            val format = SimpleDateFormat("EEE", Locale.getDefault())
+            format.format(timestamp)
+        }
+        // This year
+        else -> {
+            val format = SimpleDateFormat("MMM d", Locale.getDefault())
+            format.format(timestamp)
+        }
+    }
+} 
