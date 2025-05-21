@@ -758,6 +758,43 @@ private fun SimpleChatBubble(
     var showActions by remember { mutableStateOf(false) }
     val isUserMessage = false // For illustrative purposes, all messages are from the contact
     
+    // Define background colors with better contrast
+    val backgroundColor = when {
+        message.isSpam -> MaterialTheme.colorScheme.errorContainer
+        isUserMessage -> MaterialTheme.colorScheme.primaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    
+    // Define dark red color for spam messages
+    val DarkRed = Color(0xFF8B0000)
+    
+    // Ensure high contrast for text colors against their backgrounds
+    val textColor = when {
+        message.isSpam -> {
+            // For spam messages, ensure error text is highly visible
+            if (MaterialTheme.colorScheme.isLight()) {
+                DarkRed
+            } else {
+                Color(0xFFFF8A80) // Lighter red for dark theme
+            }
+        }
+        isUserMessage -> {
+            // For user messages, ensure clear contrast against primary container
+            MaterialTheme.colorScheme.onPrimaryContainer
+        }
+        else -> {
+            // For regular messages, ensure good contrast against surface variant
+            if (MaterialTheme.colorScheme.isLight()) {
+                Color.Black
+            } else {
+                Color.White
+            }
+        }
+    }
+    
+    // Timestamp color with better contrast (less translucent)
+    val timestampColor = textColor.copy(alpha = 0.8f)
+    
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -775,13 +812,7 @@ private fun SimpleChatBubble(
                         bottomEnd = 16.dp
                     )
                 )
-                .background(
-                    when {
-                        message.isSpam -> MaterialTheme.colorScheme.errorContainer
-                        isUserMessage -> MaterialTheme.colorScheme.primaryContainer
-                        else -> MaterialTheme.colorScheme.surfaceVariant
-                    }
-                )
+                .background(backgroundColor)
                 .clickable { showActions = true }
                 .padding(12.dp)
         ) {
@@ -792,15 +823,16 @@ private fun SimpleChatBubble(
                     ) {
                         Text(
                             text = "⚠️ Potential spam",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.labelSmall
+                            color = textColor,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
                         )
                         
                         Spacer(modifier = Modifier.width(4.dp))
                         
                         Text(
                             text = "(${(message.confidenceScore * 100).toInt()}% confidence)",
-                            color = MaterialTheme.colorScheme.error,
+                            color = textColor,
                             style = MaterialTheme.typography.labelSmall
                         )
                     }
@@ -811,12 +843,7 @@ private fun SimpleChatBubble(
                 Text(
                     text = message.content,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (isUserMessage) 
-                        MaterialTheme.colorScheme.onPrimaryContainer 
-                    else if (message.isSpam) 
-                        MaterialTheme.colorScheme.onErrorContainer
-                    else 
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                    color = textColor
                 )
                 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -825,12 +852,7 @@ private fun SimpleChatBubble(
                     text = formatTimestamp(message.timestamp),
                     style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier.align(Alignment.End),
-                    color = if (isUserMessage) 
-                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f) 
-                    else if (message.isSpam) 
-                        MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
-                    else 
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    color = timestampColor
                 )
             }
         }
@@ -871,6 +893,25 @@ private fun SimpleChatBubble(
             }
         }
     }
+}
+
+// Extension function to check if the current theme is light or dark
+@Composable
+private fun ColorScheme.isLight(): Boolean {
+    // Compare the brightness of background color to determine if we're in light mode
+    return calculateLuminance(background) > 0.5f
+}
+
+// Function to calculate luminance from RGB color
+private fun calculateLuminance(color: Color): Float {
+    // Extract RGB components
+    val red = color.red
+    val green = color.green
+    val blue = color.blue
+    
+    // Calculate relative luminance using the formula for perceived brightness
+    // This formula gives more weight to green as human eyes are more sensitive to it
+    return (0.299f * red + 0.587f * green + 0.114f * blue)
 }
 
 // Format timestamp according to the requirements:
