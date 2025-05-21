@@ -116,6 +116,138 @@ class InboxViewModel(
     }
     
     /**
+     * Mark all messages from a sender as spam
+     */
+    fun markAllMessagesFromSenderAsSpam(sender: String) {
+        viewModelScope.launch {
+            try {
+                val allMessages = _state.value.inboxMessages.filter { it.sender == sender }
+                var anySuccess = false
+                
+                for (message in allMessages) {
+                    val success = markSpamUseCase.execute(message.id, true)
+                    if (success) {
+                        anySuccess = true
+                    }
+                }
+                
+                if (anySuccess) {
+                    // Reload messages to reflect changes
+                    loadMessages()
+                }
+            } catch (e: Exception) {
+                _state.update { 
+                    it.copy(
+                        error = "Failed to mark messages as spam: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+    
+    /**
+     * Mark all messages from a sender as not spam
+     */
+    fun markAllMessagesFromSenderAsNotSpam(sender: String) {
+        viewModelScope.launch {
+            try {
+                val allMessages = _state.value.spamMessages.filter { it.sender == sender }
+                var anySuccess = false
+                
+                for (message in allMessages) {
+                    val success = markSpamUseCase.execute(message.id, false)
+                    if (success) {
+                        anySuccess = true
+                    }
+                }
+                
+                if (anySuccess) {
+                    // Reload messages to reflect changes
+                    loadMessages()
+                }
+            } catch (e: Exception) {
+                _state.update { 
+                    it.copy(
+                        error = "Failed to mark messages as not spam: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+    
+    /**
+     * Delete all messages from a sender
+     */
+    fun deleteAllMessagesFromSender(sender: String, fromSpam: Boolean) {
+        viewModelScope.launch {
+            // Check if the app is the default SMS app
+            if (!_state.value.isDefaultSmsApp) {
+                _state.update {
+                    it.copy(
+                        error = "TextShield must be the default SMS app to delete messages"
+                    )
+                }
+                return@launch
+            }
+            
+            try {
+                val messagesToDelete = if (fromSpam) {
+                    _state.value.spamMessages.filter { it.sender == sender }
+                } else {
+                    _state.value.inboxMessages.filter { it.sender == sender }
+                }
+                
+                var successCount = 0
+                
+                for (message in messagesToDelete) {
+                    val success = smsRepository.performSpamAction(message.id, SpamAction.REMOVED)
+                    if (success) {
+                        successCount++
+                    }
+                }
+                
+                if (successCount > 0) {
+                    // Update UI to reflect changes
+                    _state.update { currentState ->
+                        val updatedInbox = if (!fromSpam) {
+                            currentState.inboxMessages.filter { it.sender != sender }
+                        } else {
+                            currentState.inboxMessages
+                        }
+                        
+                        val updatedSpam = if (fromSpam) {
+                            currentState.spamMessages.filter { it.sender != sender }
+                        } else {
+                            currentState.spamMessages
+                        }
+                        
+                        // Remove any selected IDs that were from this sender
+                        val updatedSelectedIds = currentState.selectedMessageIds.filter { id ->
+                            val message = (updatedInbox + updatedSpam).find { it.id == id }
+                            message?.sender != sender
+                        }.toSet()
+                        
+                        currentState.copy(
+                            inboxMessages = updatedInbox,
+                            spamMessages = updatedSpam,
+                            selectedMessageIds = updatedSelectedIds
+                        )
+                    }
+                    
+                    // Reload messages to ensure consistency
+                    loadMessages()
+                }
+            } catch (e: Exception) {
+                _state.update { 
+                    it.copy(
+                        error = "Failed to delete messages: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+    
+    /**
      * Perform a specific action on a spam message
      */
     fun performSpamAction(messageId: String, action: SpamAction) {
