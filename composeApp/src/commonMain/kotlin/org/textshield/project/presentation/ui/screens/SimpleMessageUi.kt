@@ -50,6 +50,9 @@ fun SimpleMessageScreen() {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     
+    // Remember which conversations have been viewed to reset unread counts
+    var viewedConversations by remember { mutableStateOf(setOf<String>()) }
+    
     // Automatically show spam tab if there are spam messages
     LaunchedEffect(state.spamMessages) {
         if (state.spamMessages.isNotEmpty()) {
@@ -82,6 +85,15 @@ fun SimpleMessageScreen() {
     
     val spamMessagesBySender = remember(state.spamMessages) {
         state.spamMessages.groupBy { it.sender }
+    }
+    
+    // Function to open a conversation and mark it as viewed
+    val openConversation = { sender: String, messages: List<SmsMessage> ->
+        selectedConversationId = sender
+        selectedConversationMessages = messages
+        // Mark this conversation as viewed
+        viewedConversations = viewedConversations + sender
+        currentScreen = Screen.Conversation
     }
     
     // Show error message if any
@@ -165,16 +177,25 @@ fun SimpleMessageScreen() {
                                         messages.maxByOrNull { it.timestamp } ?: messages.first()
                                     }.sortedByDescending { it.timestamp }
                                 ) { message ->
+                                    // Calculate unread count - set to 0 if conversation has been viewed
+                                    val unreadCount = remember(message.id, viewedConversations) {
+                                        // If this conversation has been viewed, unread count is 0
+                                        if (viewedConversations.contains(message.sender)) {
+                                            0
+                                        } else {
+                                            // For demo: generate random unread counts for some messages
+                                            // In a real app, this would come from the message data
+                                            if (message.id.hashCode() % 3 == 0) (1..12).random() else 0
+                                        }
+                                    }
+                                    
                                     SimpleMessageItem(
                                         message = message,
-                                        onClick = {
-                                            selectedConversationId = message.sender
-                                            selectedConversationMessages = messagesBySender[message.sender] ?: emptyList()
-                                            currentScreen = Screen.Conversation
-                                        },
+                                        onClick = { openConversation(message.sender, messagesBySender[message.sender] ?: emptyList()) },
                                         onMarkAsSpam = { viewModel.markMessageSpamStatus(message.id, true) },
                                         onDelete = { viewModel.performSpamAction(message.id, SpamAction.REMOVED) },
-                                        isDefault = state.isDefaultSmsApp
+                                        isDefault = state.isDefaultSmsApp,
+                                        unreadCount = unreadCount
                                     )
                                 }
                             }
@@ -254,9 +275,7 @@ fun SimpleMessageScreen() {
                                             if (state.selectedMessageIds.isNotEmpty()) {
                                                 viewModel.toggleMessageSelection(message.id)
                                             } else {
-                                                selectedConversationId = message.sender
-                                                selectedConversationMessages = spamMessagesBySender[message.sender] ?: emptyList()
-                                                currentScreen = Screen.Conversation
+                                                openConversation(message.sender, spamMessagesBySender[message.sender] ?: emptyList())
                                             }
                                         },
                                         onMarkAsNotSpam = { viewModel.markMessageSpamStatus(message.id, false) },
@@ -264,7 +283,8 @@ fun SimpleMessageScreen() {
                                         isDefault = state.isDefaultSmsApp,
                                         isSelected = isSelected,
                                         onToggleSelection = { viewModel.toggleMessageSelection(message.id) },
-                                        showCheckbox = true
+                                        showCheckbox = true,
+                                        unreadCount = 0 // Spam messages don't have unread counts
                                     )
                                 }
                             }
@@ -283,7 +303,10 @@ fun SimpleMessageScreen() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             IconButton(
-                                onClick = { currentScreen = if (selectedConversationMessages.any { it.isSpam }) Screen.Spam else Screen.Inbox }
+                                onClick = { 
+                                    // Just go back without clearing viewed state
+                                    currentScreen = if (selectedConversationMessages.any { it.isSpam }) Screen.Spam else Screen.Inbox 
+                                }
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.ArrowBack,
@@ -663,7 +686,8 @@ private fun SimpleMessageItem(
     isDefault: Boolean = false,
     isSelected: Boolean = false,
     onToggleSelection: (() -> Unit)? = null,
-    showCheckbox: Boolean = false
+    showCheckbox: Boolean = false,
+    unreadCount: Int = 0
 ) {
     var showActions by remember { mutableStateOf(false) }
     
@@ -692,127 +716,156 @@ private fun SimpleMessageItem(
         MaterialTheme.colorScheme.surface
     }
     
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .background(
-                color = backgroundColor,
-                shape = RoundedCornerShape(0.dp)
-            )
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+    Column(
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .background(
+                    color = backgroundColor,
+                    shape = RoundedCornerShape(0.dp)
+                )
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            // Checkbox for selection in spam tab
-            if (showCheckbox) {
-                Checkbox(
-                    checked = isSelected,
-                    onCheckedChange = { if (onToggleSelection != null) onToggleSelection() },
-                    modifier = Modifier.padding(end = 8.dp)
-                )
-            }
-            
-            // Contact initial with improved styling
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(avatarBackgroundColor),
-                contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = message.sender.firstOrNull()?.uppercase() ?: "?",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = avatarTextColor
-                )
-            }
-            
-            Spacer(modifier = Modifier.width(16.dp))
-            
-            // Message content
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = message.sender,
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    
-                    Spacer(modifier = Modifier.width(8.dp))
-                    
-                    // Timestamp
-                    Text(
-                        text = formatTimestamp(message.timestamp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                // Checkbox for selection in spam tab
+                if (showCheckbox) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { if (onToggleSelection != null) onToggleSelection() },
+                        modifier = Modifier.padding(end = 8.dp)
                     )
                 }
                 
-                Spacer(modifier = Modifier.height(4.dp))
-                
-                // Message preview with preview text
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
+                // Contact initial with improved styling
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(avatarBackgroundColor),
+                    contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = message.content.let { 
-                            if (it.length > 50) it.take(50) + "..." else it 
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        modifier = Modifier.weight(1f)
+                        text = message.sender.firstOrNull()?.uppercase() ?: "?",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = avatarTextColor
                     )
-                    
-                    // Message count badge (for unread messages)
-                    if (message.isSpam) {
+                }
+                
+                Spacer(modifier = Modifier.width(16.dp))
+                
+                // Message content
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = message.sender,
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        
                         Spacer(modifier = Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(24.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.error),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "!",
-                                color = MaterialTheme.colorScheme.onError,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontWeight = FontWeight.Bold
+                        
+                        // Timestamp
+                        Text(
+                            text = formatTimestamp(message.timestamp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    // Message preview with preview text
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = message.content.let { 
+                                if (it.length > 50) it.take(50) + "..." else it 
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        
+                        // Show message count badge or spam indicator
+                        if (message.isSpam) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.error),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "!",
+                                    color = MaterialTheme.colorScheme.onError,
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 )
-                            )
+                            }
+                        } else if (unreadCount > 0) {
+                            // Unread message count badge
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (unreadCount > 9) "9+" else unreadCount.toString(),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                )
+                            }
                         }
-                    } else {
-                        // This is where we would show unread count
                     }
                 }
-            }
-            
-            // Add more options menu
-            Spacer(modifier = Modifier.width(8.dp))
-            IconButton(
-                onClick = { showActions = true },
-                modifier = Modifier.size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = "More Options",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                
+                // Add more options menu
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                    onClick = { showActions = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "More Options",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
+        
+        // Add divider between messages
+        Divider(
+            modifier = Modifier.fillMaxWidth(),
+            color = if (isDarkTheme) 
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            else 
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+        )
     }
     
     // Message actions dialog
