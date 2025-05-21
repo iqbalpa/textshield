@@ -11,6 +11,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -255,13 +261,15 @@ fun SimpleMessageScreen() {
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "←",
-                                modifier = Modifier
-                                    .padding(end = 8.dp)
-                                    .clickable { currentScreen = if (selectedConversationMessages.any { it.isSpam }) Screen.Spam else Screen.Inbox },
-                                style = MaterialTheme.typography.headlineSmall
-                            )
+                            IconButton(
+                                onClick = { currentScreen = if (selectedConversationMessages.any { it.isSpam }) Screen.Spam else Screen.Inbox }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
                             
                             Text(
                                 text = selectedConversationId ?: "Conversation",
@@ -325,7 +333,11 @@ private fun AppBar(
                 horizontalArrangement = Arrangement.End
             ) {
                 IconButton(onClick = onRefresh) {
-                    Text("⟳", style = MaterialTheme.typography.titleLarge)
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Refresh",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
                 
                 Spacer(modifier = Modifier.width(8.dp))
@@ -349,10 +361,11 @@ private fun SpamEmptyState(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = "✓",
-                style = MaterialTheme.typography.displayLarge,
-                color = MaterialTheme.colorScheme.primary
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = "No Spam",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(64.dp)
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -637,22 +650,34 @@ private fun SimpleMessageItem(
                 
                 // Message preview
                 Text(
-                    text = if (message.isSpam) "🚫 ${message.content}" else message.content,
+                    text = message.content,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
                 )
+                
+                if (message.isSpam) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Default.Block,
+                        contentDescription = "Spam Message",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
             
             Spacer(modifier = Modifier.width(8.dp))
             
-            // Action buttons
+            // Action buttons - replace text with icon
             IconButton(
                 onClick = { showActions = true }
             ) {
-                Text(
-                    text = "⋮",
-                    style = MaterialTheme.typography.titleLarge
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "More Actions",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

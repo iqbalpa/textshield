@@ -42,6 +42,7 @@ kotlin {
             implementation("org.tensorflow:tensorflow-lite:2.12.0")
             implementation("org.tensorflow:tensorflow-lite-task-text:0.4.4")
             implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+            implementation("androidx.compose.material:material-icons-extended:1.6.0")
         }
         commonMain.dependencies {
             implementation(compose.runtime)
