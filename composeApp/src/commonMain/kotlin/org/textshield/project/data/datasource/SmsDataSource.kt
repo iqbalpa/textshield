@@ -1,6 +1,7 @@
 package org.textshield.project.data.datasource
 
 import org.textshield.project.domain.model.SmsMessage
+import org.textshield.project.domain.model.SpamAction
 
 /**
  * Platform-specific SMS data source
@@ -20,4 +21,26 @@ expect class SmsDataSource() {
      * On Desktop: update mock data
      */
     suspend fun markMessageSpamStatus(messageId: String, isSpam: Boolean): Boolean
-} 
+    
+    /**
+     * Perform an action on a spam message
+     */
+    suspend fun performSpamAction(messageId: String, action: SpamAction): Boolean
+    
+    /**
+     * Set the default action for detected spam messages
+     */
+    suspend fun setDefaultSpamAction(action: SpamAction)
+    
+    /**
+     * Get the current default action for detected spam messages
+     */
+    suspend fun getDefaultSpamAction(): SpamAction
+    
+    /**
+     * Check if the app is set as the default SMS app
+     * On Android: checks system default SMS app status
+     * On Desktop: always returns false
+     */
+    suspend fun isDefaultSmsApp(): Boolean
+}

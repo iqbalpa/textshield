@@ -37,6 +37,11 @@ kotlin {
         androidMain.dependencies {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
+            
+            // TensorFlow Lite dependencies
+            implementation("org.tensorflow:tensorflow-lite:2.12.0")
+            implementation("org.tensorflow:tensorflow-lite-task-text:0.4.4")
+            implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
         }
         commonMain.dependencies {
             implementation(compose.runtime)
@@ -47,6 +52,7 @@ kotlin {
             implementation(compose.components.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodel)
             implementation(libs.androidx.lifecycle.runtimeCompose)
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
